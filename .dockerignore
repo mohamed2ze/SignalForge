@@ -1,0 +1,11 @@
+.git
+.gitignore
+.env
+**/bin
+**/obj
+tests
+docs
+.signalforge-dev
+**/*.log
+README.md
+AGENTS.md
