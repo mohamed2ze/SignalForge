@@ -1,0 +1,167 @@
+using System.Globalization;
+using Microsoft.AspNetCore.Mvc;
+using SignalForge.Application.Services;
+using SignalForge.Domain.Models;
+
+namespace SignalForge.Api.Controllers;
+
+/// <summary>
+/// Execution observability endpoints (Stage 5, Level 4; Decision #24): server-side, tenant-scoped
+/// aggregates and paged history for a future dashboard. All queries are scoped to the caller's
+/// tenant via the <c>tenant_id</c> claim and the denormalized untouched execution tenant column.
+/// GET-only; the signing surface (POST /api/events) is unaffected by this controller.
+/// </summary>
+[ApiController]
+[Route("api/[controller]")]
+public sealed class ExecutionsController : ControllerBase
+{
+    private static readonly string[] AllowedStatuses =
+    [
+        WorkflowExecutionStatus.Pending,
+        WorkflowExecutionStatus.Running,
+        WorkflowExecutionStatus.Succeeded,
+        WorkflowExecutionStatus.Failed,
+        WorkflowExecutionStatus.Cancelled,
+        WorkflowExecutionStatus.Retrying
+    ];
+
+    private readonly IExecutionObservabilityService _observability;
+    private readonly Microsoft.Extensions.Logging.ILogger<ExecutionsController> _logger;
+
+    public ExecutionsController(
+        IExecutionObservabilityService observability,
+        Microsoft.Extensions.Logging.ILogger<ExecutionsController> logger)
+    {
+        _observability = observability;
+        _logger = logger;
+    }
+
+    /// <summary>
+    /// Paged, filtered execution history for the caller's tenant.
+    /// </summary>
+    /// <param name="workflowId">Optional exact workflow filter.</param>
+    /// <param name="status">Optional execution status filter.</param>
+    /// <param name="from">Optional window start (ISO 8601, UTC).</param>
+    /// <param name="to">Optional window end (ISO 8601, UTC).</param>
+    /// <param name="page">1-based page number (default 1).</param>
+    /// <param name="pageSize">Page size 1..100 (default 20).</param>
+    [HttpGet]
+    [ProducesResponseType(typeof(PagedExecutionsResult), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    public async Task<ActionResult<PagedExecutionsResult>> GetExecutions(
+        [FromQuery] Guid? workflowId,
+        [FromQuery] string? status,
+        [FromQuery] string? from,
+        [FromQuery] string? to,
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 20)
+    {
+        if (!TryGetTenantId(out var tenantId))
+            return Unauthorized();
+
+        var normalizedStatus = status?.Trim();
+        if (normalizedStatus is not null &&
+            !AllowedStatuses.Contains(normalizedStatus, StringComparer.OrdinalIgnoreCase))
+        {
+            return BadRequest(new ProblemDetails
+            {
+                Title = "Invalid status filter",
+                Status = StatusCodes.Status400BadRequest,
+                Detail = $"Status must be one of: {string.Join(", ", AllowedStatuses)}"
+            });
+        }
+
+        if (!TryParseWindow(from, to, out var fromUtc, out var toUtc))
+            return BadRequest(new ProblemDetails
+            {
+                Title = "Invalid time window",
+                Status = StatusCodes.Status400BadRequest,
+                Detail = "from/to must be ISO 8601 instants (e.g. 2026-09-12T00:00:00Z)"
+            });
+
+        var filter = new ExecutionQueryFilter(workflowId, normalizedStatus, fromUtc, toUtc, page, pageSize);
+        return Ok(await _observability.GetExecutionsAsync(tenantId, filter, HttpContext.RequestAborted));
+    }
+
+    /// <summary>
+    /// Server-side aggregates for the caller's tenant: status counts, step latency by step type,
+    /// and failure/retry summary — all within the optional workflow/time window.
+    /// </summary>
+    [HttpGet("aggregates")]
+    [ProducesResponseType(typeof(ExecutionAggregates), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    public async Task<ActionResult<ExecutionAggregates>> GetAggregates(
+        [FromQuery] Guid? workflowId,
+        [FromQuery] string? from,
+        [FromQuery] string? to)
+    {
+        if (!TryGetTenantId(out var tenantId))
+            return Unauthorized();
+
+        if (!TryParseWindow(from, to, out var fromUtc, out var toUtc))
+            return BadRequest(new ProblemDetails
+            {
+                Title = "Invalid time window",
+                Status = StatusCodes.Status400BadRequest,
+                Detail = "from/to must be ISO 8601 instants (e.g. 2026-09-12T00:00:00Z)"
+            });
+
+        var filter = new AggregateQueryFilter(workflowId, fromUtc, toUtc);
+        return Ok(await _observability.GetAggregatesAsync(tenantId, filter, HttpContext.RequestAborted));
+    }
+
+    private bool TryGetTenantId(out Guid tenantId)
+    {
+        var tenantIdClaim = User.FindFirst("tenant_id");
+        if (tenantIdClaim == null || !Guid.TryParse(tenantIdClaim.Value, out tenantId))
+        {
+            tenantId = Guid.Empty;
+            return false;
+        }
+        return true;
+    }
+
+    private static bool TryParseWindow(
+        string? from,
+        string? to,
+        out DateTime? fromUtc,
+        out DateTime? toUtc)
+    {
+        fromUtc = null;
+        toUtc = null;
+
+        if (from != null)
+        {
+            if (!TryParseUtcInstant(from, out var parsedFrom))
+                return false;
+            fromUtc = parsedFrom;
+        }
+
+        if (to != null)
+        {
+            if (!TryParseUtcInstant(to, out var parsedTo))
+                return false;
+            toUtc = parsedTo;
+        }
+
+        return true;
+    }
+
+    private static bool TryParseUtcInstant(string value, out DateTime utc)
+    {
+        if (DateTimeOffset.TryParse(
+                value,
+                CultureInfo.InvariantCulture,
+                DateTimeStyles.AllowWhiteSpaces | DateTimeStyles.AssumeUniversal,
+                out var parsed))
+        {
+            utc = parsed.UtcDateTime;
+            return true;
+        }
+
+        utc = default;
+        return false;
+    }
+}
