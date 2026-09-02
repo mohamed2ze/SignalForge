@@ -14,6 +14,7 @@ public class OutboxMessage
     public DateTime CreatedAt { get; private set; }
     public DateTime? ProcessedAt { get; private set; }
     public DateTime? FailedAt { get; private set; }
+    public DateTime? NextRetryAt { get; private set; } // Per-message retry gate: not re-polled before this time (Decision #26)
     public int AttemptCount { get; private set; }
     public string? ErrorMessage { get; private set; }
     public bool IsProcessed { get; private set; }
@@ -102,6 +103,24 @@ public class OutboxMessage
 
         FailedAt = DateTime.UtcNow;
         ErrorMessage = errorMessage;
+    }
+
+    /// <summary>
+    /// Schedules when the message may be re-polled after a failure (Decision #26).
+    /// The retry gate keeps a poison message from being re-claimed (and re-failed) on
+    /// consecutive poll cycles, giving the underlying failure time to recover before
+    /// the next attempt.
+    /// </summary>
+    /// <param name="nextRetryAtUtc">The earliest UTC time at which the message may be claimed again</param>
+    public void ScheduleNextRetry(DateTime nextRetryAtUtc)
+    {
+        if (nextRetryAtUtc.Kind == DateTimeKind.Local)
+            throw new ArgumentException("Scheduled retry time must be UTC", nameof(nextRetryAtUtc));
+
+        if (!HasFailed())
+            throw new InvalidOperationException("Cannot schedule a retry before the message has failed");
+
+        NextRetryAt = nextRetryAtUtc;
     }
 
     /// <summary>

@@ -35,6 +35,19 @@ public class OutboxProcessorTests
         }
     }
 
+    // Wraps a real scope factory but can fail at scope creation — the whole-cycle exception path
+    // (vs. the per-message failure path exercised by the ControlledSender).
+    private sealed class FlakyScopeFactory : IServiceScopeFactory
+    {
+        private readonly IServiceScopeFactory _inner;
+        public bool Fail { get; set; }
+
+        public FlakyScopeFactory(IServiceScopeFactory inner) => _inner = inner;
+
+        public IServiceScope CreateScope()
+            => Fail ? throw new InvalidOperationException("Simulated scope creation failure") : _inner.CreateScope();
+    }
+
     private static DbContextOptions<SignalForgeDbContext> NewInMemoryOptions()
         => new DbContextOptionsBuilder<SignalForgeDbContext>()
             .UseInMemoryDatabase(Guid.NewGuid().ToString())
@@ -99,7 +112,7 @@ public class OutboxProcessorTests
         Assert.Equal(2, broker.GetAll().Count);
     }
 
-    // ---------- publish failure → retry with backoff ----------
+    // ---------- publish failure → retry gate (NextRetryAt) then retry ----------
 
     [Fact]
     public async Task Failed_cycle_keeps_message_repollable_and_grows_attempt()
@@ -112,7 +125,8 @@ public class OutboxProcessorTests
 
         var firstDelay = await processor.ProcessBatchAsync(CancellationToken.None);
 
-        // Under the circuit threshold: healthy pacing on the wire.
+        // Per-message failures never grow the global backoff (Decision #26): healthy pacing on
+        // the wire.
         Assert.Equal(TimeSpan.FromSeconds(5), firstDelay);
 
         using (var verify = new SignalForgeDbContext(options))
@@ -121,9 +135,21 @@ public class OutboxProcessorTests
             Assert.Equal(1, message.AttemptCount);
             Assert.False(message.IsProcessed);
             Assert.NotNull(message.FailedAt);
+            Assert.True(message.NextRetryAt > DateTime.UtcNow); // retry gate scheduled
             Assert.Contains("Simulated send failure", message.ErrorMessage);
         }
 
+        // The retry gate (2s for attempt 1) has not elapsed: an immediate cycle claims nothing.
+        await processor.ProcessBatchAsync(CancellationToken.None);
+
+        using (var verify = new SignalForgeDbContext(options))
+        {
+            var message = await verify.OutboxMessages.SingleAsync();
+            Assert.Equal(1, message.AttemptCount); // untouched
+        }
+
+        // Once the gate passes, the message is re-polled and the attempt grows.
+        await MakeRetryDueAsync(options);
         await processor.ProcessBatchAsync(CancellationToken.None);
 
         using (var verify = new SignalForgeDbContext(options))
@@ -147,9 +173,12 @@ public class OutboxProcessorTests
             BuildScopeFactory(options, sender),
             new OutboxOptions { MaxAttempts = 3 });
 
-        for (var attempt = 0; attempt < 3; attempt++)
+        // Cycle, wait out the retry gate, cycle again — three attempts total.
+        for (var attempt = 1; attempt <= 3; attempt++)
         {
             await processor.ProcessBatchAsync(CancellationToken.None);
+            if (attempt < 3)
+                await MakeRetryDueAsync(options);
         }
 
         using (var verify = new SignalForgeDbContext(options))
@@ -167,6 +196,75 @@ public class OutboxProcessorTests
         using (var verify = new SignalForgeDbContext(options))
         {
             Assert.Empty(await verify.OutboxMessages.Where(m => m.TenantId == TenantId).ToListAsync());
+        }
+    }
+
+    // ---------- retry gate: a poison message is not re-claimed until NextRetryAt ----------
+
+    [Fact]
+    public async Task NextRetryAt_gates_repolling()
+    {
+        var options = NewInMemoryOptions();
+        await SeedMessageAsync(options, "OrderCreated", """{"id":1}""");
+
+        var sender = new ControlledSender { Throw = true };
+        var processor = CreateProcessor(
+            BuildScopeFactory(options, sender),
+            new OutboxOptions { MaxAttempts = 5 });
+
+        await processor.ProcessBatchAsync(CancellationToken.None);
+        await processor.ProcessBatchAsync(CancellationToken.None);
+
+        // Two consecutive cycles, no gate elapsed: only one attempt logged, message untouched.
+        using (var verify = new SignalForgeDbContext(options))
+        {
+            var message = await verify.OutboxMessages.SingleAsync();
+            Assert.Equal(1, message.AttemptCount);
+        }
+
+        await MakeRetryDueAsync(options);
+        await processor.ProcessBatchAsync(CancellationToken.None);
+
+        using (var verify = new SignalForgeDbContext(options))
+        {
+            var message = await verify.OutboxMessages.SingleAsync();
+            Assert.Equal(2, message.AttemptCount);
+            Assert.False(message.IsProcessed);
+        }
+    }
+
+    // ---------- per-message failures never grow the global backoff or open the circuit ----------
+
+    [Fact]
+    public async Task Message_level_failures_do_not_grow_global_backoff_or_open_circuit()
+    {
+        var options = NewInMemoryOptions();
+        await SeedMessageAsync(options, "OrderCreated", """{"id":1}""");
+
+        var sender = new ControlledSender { Throw = true };
+        var processor = CreateProcessor(
+            BuildScopeFactory(options, sender),
+            new OutboxOptions
+            {
+                PollIntervalSeconds = 1,
+                MaxAttempts = 10,
+                FailureThreshold = 3,
+                MaxBackoffSeconds = 16
+            });
+
+        // Three consecutive failing cycles (past the old threshold) with a gate wait between them.
+        for (var i = 0; i < 3; i++)
+        {
+            Assert.Equal(TimeSpan.FromSeconds(1), await processor.ProcessBatchAsync(CancellationToken.None));
+            await MakeRetryDueAsync(options);
+        }
+
+        // The message is still healthy-pacing: the loop is functioning, only the message is bad.
+        using (var verify = new SignalForgeDbContext(options))
+        {
+            var message = await verify.OutboxMessages.SingleAsync();
+            Assert.Equal(3, message.AttemptCount);
+            Assert.False(message.IsProcessed);
         }
     }
 
@@ -198,17 +296,18 @@ public class OutboxProcessorTests
         }
     }
 
-    // ---------- circuit breaker: open on repeated failures, reset on success ----------
+    // ---------- circuit breaker: opens only on whole-cycle failures, resets on success ----------
 
     [Fact]
-    public async Task Circuit_opens_after_failure_threshold_and_success_resets_it()
+    public async Task Circuit_opens_after_whole_cycle_failure_threshold_and_success_resets_it()
     {
         var options = NewInMemoryOptions();
         await SeedMessageAsync(options, "OrderCreated", """{"id":1}""");
 
-        var sender = new ControlledSender { Throw = true };
+        var sender = new ControlledSender { Throw = false };
+        var scopeFactory = new FlakyScopeFactory(BuildScopeFactory(options, sender));
         var processor = CreateProcessor(
-            BuildScopeFactory(options, sender),
+            scopeFactory,
             new OutboxOptions
             {
                 PollIntervalSeconds = 1,
@@ -217,18 +316,19 @@ public class OutboxProcessorTests
                 MaxBackoffSeconds = 16
             });
 
-        // Cycles 1 & 2: below threshold, breaker still closed (healthy pacing on the wire).
-        Assert.Equal(TimeSpan.FromSeconds(1), await processor.ProcessBatchAsync(CancellationToken.None));
-        Assert.Equal(TimeSpan.FromSeconds(1), await processor.ProcessBatchAsync(CancellationToken.None));
+        // Cycles 1 & 2: below threshold, breaker still closed (growing backoff, still pre-circuit).
+        scopeFactory.Fail = true;
+        Assert.Equal(TimeSpan.FromSeconds(2), await processor.ProcessBatchAsync(CancellationToken.None));
+        Assert.Equal(TimeSpan.FromSeconds(4), await processor.ProcessBatchAsync(CancellationToken.None));
 
-        // Cycle 3: threshold hit, circuit opens — the delay is the grown backoff (2^3 = 8s).
+        // Cycle 3: threshold hit, circuit opens — the delay is now the grown backoff.
         Assert.Equal(TimeSpan.FromSeconds(8), await processor.ProcessBatchAsync(CancellationToken.None));
 
         // Cycle 4: still open, backoff doubles to 16s (capped at MaxBackoffSeconds).
         Assert.Equal(TimeSpan.FromSeconds(16), await processor.ProcessBatchAsync(CancellationToken.None));
 
-        // Success resets the breaker: the (still retryable) message acks and pacing returns to base.
-        sender.Throw = false;
+        // Success resets the breaker: the scope resolves, the message acks, pacing returns to base.
+        scopeFactory.Fail = false;
         Assert.Equal(TimeSpan.FromSeconds(1), await processor.ProcessBatchAsync(CancellationToken.None));
         Assert.Single(sender.Sent);
 
@@ -236,7 +336,7 @@ public class OutboxProcessorTests
         {
             var message = await verify.OutboxMessages.SingleAsync();
             Assert.True(message.IsProcessed);
-            Assert.Equal(4, message.AttemptCount);
+            Assert.Equal(0, message.AttemptCount); // fresh send, never retried
         }
     }
 
@@ -247,6 +347,17 @@ public class OutboxProcessorTests
     {
         await using var ctx = new SignalForgeDbContext(options);
         ctx.OutboxMessages.Add(OutboxMessage.Create(TenantId, type, payload));
+        await ctx.SaveChangesAsync();
+    }
+
+    // Forces a scheduled retry to be due now: the processor only re-claims a failed message once
+    // its NextRetryAt gate has passed, so tests that exercise consecutive attempts must collapse
+    // the gate. Uses the EF value-sink the observability/replay tests already rely on.
+    private static async Task MakeRetryDueAsync(DbContextOptions<SignalForgeDbContext> options)
+    {
+        await using var ctx = new SignalForgeDbContext(options);
+        var message = await ctx.OutboxMessages.SingleAsync();
+        ctx.Entry(message).Property(m => m.NextRetryAt).CurrentValue = DateTime.UtcNow.AddSeconds(-1);
         await ctx.SaveChangesAsync();
     }
 }

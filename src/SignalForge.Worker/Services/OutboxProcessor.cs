@@ -38,20 +38,27 @@ public class OutboxProcessor : IOutboxProcessor
     /// <inheritdoc />
     public async Task<TimeSpan> ProcessBatchAsync(CancellationToken cancellationToken = default)
     {
-        // Fresh scope per cycle: a short-lived DbContext avoids a long-lived
-        // context holding stale change tracking and connections across a long-running host.
-        using var scope = _scopeFactory.CreateScope();
-
-        var dbContext = scope.ServiceProvider.GetRequiredService<ISignalForgeDbContext>();
-        var sender = scope.ServiceProvider.GetRequiredService<IOutboxMessageSender>();
-
         try
         {
+            // Fresh scope per cycle: a short-lived DbContext avoids a long-lived
+            // context holding stale change tracking and connections across a long-running host.
+            // Scope/DI failure is a whole-cycle failure like any other and is caught below.
+            using var scope = _scopeFactory.CreateScope();
+
+            var dbContext = scope.ServiceProvider.GetRequiredService<ISignalForgeDbContext>();
+            var sender = scope.ServiceProvider.GetRequiredService<IOutboxMessageSender>();
+
             // Claim unprocessed messages. Failed-but-not-exhausted messages (FailedAt set,
-            // AttemptCount less than MaxAttempts) are retried; only dead-lettered messages disappear.
+            // AttemptCount less than MaxAttempts) are retried, but only once their per-message
+            // retry gate has passed (Decision #26): a poison message is scheduled (NextRetryAt)
+            // and not re-claimed on consecutive cycles, so a single failing message can no longer
+            // tight-loop the broker. Only dead-lettered messages disappear.
+            var now = DateTime.UtcNow;
             var messages = await dbContext.OutboxMessages
                 .Where(m => !m.IsProcessed)
+                .Where(m => m.FailedAt == null || m.NextRetryAt == null || m.NextRetryAt <= now)
                 .OrderBy(m => m.CreatedAt)
+                .ThenBy(m => m.Id) // Deterministic tiebreak between same-instant messages
                 .Take(_options.BatchSize)
                 .ToListAsync(cancellationToken);
 
@@ -65,7 +72,6 @@ public class OutboxProcessor : IOutboxProcessor
 
             _logger.LogInformation("Processing {Count} outbox messages", messages.Count);
 
-            var cycleFailures = 0;
             foreach (var message in messages)
             {
                 if (cancellationToken.IsCancellationRequested)
@@ -87,7 +93,6 @@ public class OutboxProcessor : IOutboxProcessor
                 {
                     message.IncrementAttempt();
                     message.MarkAsFailed(ex.ToString());
-                    cycleFailures++;
 
                     if (message.AttemptCount >= _options.MaxAttempts)
                     {
@@ -103,20 +108,30 @@ public class OutboxProcessor : IOutboxProcessor
                     }
                     else
                     {
+                        // Per-message exponential backoff (Decision #26): the message is not
+                        // re-claimed until the backoff elapses. Per-message failures do not grow
+                        // the global cycle backoff or open the circuit -- the loop is functioning
+                        // normally; only the individual message is unhealthy.
+                        var retryBackoffSeconds = Math.Min(
+                            Math.Pow(2, message.AttemptCount),
+                            _options.MaxBackoffSeconds);
+                        message.ScheduleNextRetry(DateTime.UtcNow.AddSeconds(retryBackoffSeconds));
+
                         _logger.LogWarning(ex,
                             "Failed to process outbox message {messageId} for tenant {tenantId} " +
-                            "(attempt {attempt}/{MaxAttempts})",
-                            message.Id, message.TenantId, message.AttemptCount, _options.MaxAttempts);
+                            "(attempt {attempt}/{MaxAttempts}), retrying in {BackoffSeconds}s",
+                            message.Id, message.TenantId, message.AttemptCount, _options.MaxAttempts,
+                            retryBackoffSeconds);
                     }
                 }
             }
 
             await dbContext.SaveChangesAsync(cancellationToken);
 
-            if (cycleFailures > 0)
-                RecordFailure();
-            else
-                ResetBreaker();
+            // Per-message failures never reach here as cycle failures (Decision #26): they are
+            // individually scheduled via NextRetryAt and reported in the per-message log above.
+            // The global circuit only opens for whole-cycle exceptions (handled in the outer catch).
+            ResetBreaker();
 
             // Once the circuit opens, the grown backoff paces the whole loop so repeated
             // failures stop tight-looping the broker/DB.

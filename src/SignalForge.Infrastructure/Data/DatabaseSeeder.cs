@@ -1,3 +1,4 @@
+using System.Security.Cryptography;
 using Microsoft.EntityFrameworkCore;
 using SignalForge.Domain.Models;
 
@@ -81,19 +82,24 @@ public static class DatabaseSeeder
         return new SeedResult(seededApiKey, seededSigningSecret);
     }
 
+    // Sample dev credentials are generated with a cryptographic random number generator
+    // (Decision #26): System.Random is time-seeded and predictable, so a generated API key or
+    // signing secret could otherwise be brute-forced if it leaked (e.g. via a log).
+
     private static string GenerateSecureSampleKey()
     {
-        const string chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
-        var random = new Random();
-        return new string(Enumerable.Repeat(chars, SampleKeyLength)
-            .Select(s => s[random.Next(s.Length)]).ToArray());
+        return GenerateRandomToken(SampleKeyLength);
     }
 
     private static string GenerateSecureSigningSecret()
     {
+        return GenerateRandomToken(SampleSigningSecretLength);
+    }
+
+    private static string GenerateRandomToken(int length)
+    {
         const string chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
-        var random = new Random();
-        return new string(Enumerable.Repeat(chars, SampleSigningSecretLength)
-            .Select(s => s[random.Next(s.Length)]).ToArray());
+        var bytes = RandomNumberGenerator.GetBytes(length);
+        return new string(bytes.Select(b => chars[b % chars.Length]).ToArray());
     }
 }

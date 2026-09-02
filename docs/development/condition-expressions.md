@@ -93,6 +93,10 @@ tokenizer + recursive-descent parser + evaluator in
 - Malformed expressions, tokenizer/parser/evaluator errors never throw out of the step.
   `ConditionExpressionEvaluator.Evaluate` returns `Value = false` + the error message; the
   conditional step logs a warning and routes to the **else** (`falseStep`) branch.
+- **Resource guards (Decision #26):** expressions are capped at 2048 characters
+  (`MaxExpressionLength`) and 64 levels of nesting for parentheses/`not` (`MaxParseDepth`). An
+  over-limit expression fails fast the same way (false + error) instead of exhausting the stack or
+  spending unbounded time tokenizing.
 - Broken step configuration (missing `expression` / `trueStep` / `falseStep` or invalid JSON) fails
   the step via the processor's catch path (step → retry → dead-letter after max attempts).
 

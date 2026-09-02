@@ -64,8 +64,10 @@ every environment supply its own value without touching the repo:
 | Docker Compose | `.env` (gitignored) | `SEED_API_KEY=<key>` in `.env`, referenced by `docker-compose.yml` |
 | Container override (any) | environment on the container | `Seed__DefaultApiKey=<key>` in your orchestrator |
 
-If unset everywhere, the seeder generates a **random** key and logs it once. Either way the key is
-hashed (SHA-256) before storage; the plain text is never persisted in the DB.
+If unset everywhere, the seeder generates a **random** key via a cryptographic RNG. Either way the
+key is hashed (SHA-256) before storage; the plain text is never persisted in the DB. Generated
+credentials are **not** logged by default — set `Seed:ExposeGeneratedSecrets=true` (local dev only)
+to print them once at seed time.
 
 ## Docker Compose full stack (one-command)
 
@@ -92,10 +94,11 @@ the README's "Docker Compose" section.
 On startup the API runs an **idempotent seeder** that creates:
 
 - a default tenant (`Id`: `3fa85f64-5717-4562-b3fc-2c963f66afa6` — override via `Seed:TenantId`),
-- a sample API key for local development (the plain-text key is logged once on first seed).
+- a sample API key for local development (generated with a cryptographic RNG).
 
 The sample key can be provided explicitly via `Seed:DefaultApiKey` (user-secrets/env); otherwise a
-random 32-character key is generated and logged. Re-running never duplicates data.
+random 32-character key is generated and — like the webhook signing secret — not printed to logs
+unless `Seed:ExposeGeneratedSecrets=true`. Re-running never duplicates data.
 
 ## Worker configuration
 

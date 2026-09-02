@@ -28,6 +28,19 @@ public sealed record ConditionEvaluationResult(bool Value, string? Error);
 public static class ConditionExpressionEvaluator
 {
     /// <summary>
+    /// Maximum length of a condition expression accepted by the evaluator. Guards the tokenizer
+    /// against unbounded input (e.g. a maliciously long condition persisted by an admin).
+    /// </summary>
+    public const int MaxExpressionLength = 2048;
+
+    /// <summary>
+    /// Maximum nesting depth (parentheses and 'not' chains) accepted by the parser. Prevents a
+    /// pathological expression like a thousand nested parentheses from exhausting the stack; the
+    /// parser fails fast with an error instead (Decision #26).
+    /// </summary>
+    public const int MaxParseDepth = 64;
+
+    /// <summary>
     /// Evaluates a condition expression against a context JSON node.
     /// Never throws — errors are captured and return <see langword="false"/>.
     /// </summary>
@@ -40,8 +53,12 @@ public static class ConditionExpressionEvaluator
             if (string.IsNullOrWhiteSpace(expression))
                 throw new ConditionExpressionException("Condition expression is empty.");
 
+            if (expression.Length > MaxExpressionLength)
+                throw new ConditionExpressionException(
+                    $"Condition expression exceeds maximum length of {MaxExpressionLength} characters.");
+
             IReadOnlyList<Token> tokens = Tokenizer.Tokenize(expression);
-            Node ast = new Parser(tokens).Parse();
+            Node ast = new Parser(tokens, MaxParseDepth).Parse();
             return new ConditionEvaluationResult(Evaluator.ToBool(Evaluator.Evaluate(ast, context)), null);
         }
         catch (Exception ex)
@@ -276,11 +293,14 @@ internal static class Tokenizer
 internal sealed class Parser
 {
     private readonly IReadOnlyList<Token> _tokens;
+    private readonly int _maxDepth;
     private int _position;
+    private int _depth;
 
-    public Parser(IReadOnlyList<Token> tokens)
+    public Parser(IReadOnlyList<Token> tokens, int maxDepth)
     {
         _tokens = tokens;
+        _maxDepth = maxDepth;
     }
 
     public Node Parse()
@@ -292,15 +312,27 @@ internal sealed class Parser
 
     private Node ParseOr()
     {
-        Node left = ParseAnd();
-        while (Current.Type == TokenType.Or)
+        _depth++;
+        try
         {
-            Advance();
-            Node right = ParseAnd();
-            left = new BinaryNode("or", left, right);
-        }
+            if (_depth > _maxDepth)
+                throw new ConditionExpressionException(
+                    $"Condition expression exceeds maximum nesting depth of {_maxDepth}.");
 
-        return left;
+            Node left = ParseAnd();
+            while (Current.Type == TokenType.Or)
+            {
+                Advance();
+                Node right = ParseAnd();
+                left = new BinaryNode("or", left, right);
+            }
+
+            return left;
+        }
+        finally
+        {
+            _depth--;
+        }
     }
 
     private Node ParseAnd()
@@ -318,13 +350,25 @@ internal sealed class Parser
 
     private Node ParseNot()
     {
-        if (Current.Type == TokenType.Not)
+        _depth++;
+        try
         {
-            Advance();
-            return new UnaryNode(ParseNot());
-        }
+            if (_depth > _maxDepth)
+                throw new ConditionExpressionException(
+                    $"Condition expression exceeds maximum nesting depth of {_maxDepth}.");
 
-        return ParseComparison();
+            if (Current.Type == TokenType.Not)
+            {
+                Advance();
+                return new UnaryNode(ParseNot());
+            }
+
+            return ParseComparison();
+        }
+        finally
+        {
+            _depth--;
+        }
     }
 
     private Node ParseComparison()

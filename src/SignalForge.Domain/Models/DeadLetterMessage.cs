@@ -119,6 +119,18 @@ public class DeadLetterMessage
     }
 
     /// <summary>
+    /// Compensates a replay attempt (Decision #26): called when the replay's outbox insert is
+    /// rejected by the in-flight unique index, restoring the counters to the values captured
+    /// before <see cref="RecordReplay"/> so the losing replica's in-memory state matches the DB
+    /// (the whole replay transaction was rolled back, the counter changes never persisted).
+    /// </summary>
+    public void RollBackReplay(int previousReplayCount, DateTime? previousLastReplayedAt)
+    {
+        ReplayCount = previousReplayCount;
+        LastReplayedAt = previousLastReplayedAt;
+    }
+
+    /// <summary>
     /// Marks the dead letter message as processed (manually handled).
     /// </summary>
     public void MarkAsProcessed()

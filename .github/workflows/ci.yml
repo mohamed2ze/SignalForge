@@ -55,6 +55,11 @@ jobs:
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: 10.0.x
+          cache: true
+          cache-dependency-path: '**/*.csproj'
+
+      - name: Restore
+        run: dotnet restore SignalForge.slnx
 
       - name: Format gate (whitespace/style/analyzers)
         run: dotnet format SignalForge.slnx --verify-no-changes --no-restore

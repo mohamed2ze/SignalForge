@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using SignalForge.Application.Data;
 using SignalForge.Domain.ValueObjects;
 
@@ -10,10 +11,12 @@ namespace SignalForge.Application.Services;
 public class ApiKeyValidationService : IApiKeyValidationService
 {
     private readonly ISignalForgeDbContext _dbContext;
+    private readonly ILogger<ApiKeyValidationService>? _logger;
 
-    public ApiKeyValidationService(ISignalForgeDbContext dbContext)
+    public ApiKeyValidationService(ISignalForgeDbContext dbContext, ILogger<ApiKeyValidationService>? logger = null)
     {
         _dbContext = dbContext;
+        _logger = logger;
     }
 
     /// <inheritdoc />
@@ -57,9 +60,22 @@ public class ApiKeyValidationService : IApiKeyValidationService
             };
         }
 
-        // Mark the key as used
+        // Mark the key as used. LastUsedAt is a best-effort observation, not a gate: it shares a
+        // concurrency token (UpdatedAt) with other updates, so under concurrent validation the
+        // write can lose the race and throw DbUpdateConcurrencyException. The key is still
+        // verified valid — losing the usage stamp must not fail the request (Decision #26).
         apiKeyEntity.MarkAsUsed();
-        await _dbContext.SaveChangesAsync();
+        try
+        {
+            await _dbContext.SaveChangesAsync();
+        }
+        catch (DbUpdateConcurrencyException ex)
+        {
+            _logger?.LogDebug(ex,
+                "Api key {ApiKeyId} for tenant {TenantId} validated, but the usage stamp was " +
+                "dropped by a concurrent update; validation still succeeds",
+                apiKeyEntity.Id, apiKeyEntity.TenantId);
+        }
 
         return new ApiKeyValidationResult
         {

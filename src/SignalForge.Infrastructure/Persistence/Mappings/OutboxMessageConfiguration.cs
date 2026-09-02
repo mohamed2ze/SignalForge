@@ -48,7 +48,18 @@ public class OutboxMessageConfiguration : IEntityTypeConfiguration<OutboxMessage
         // Single in-flight requeue lookups (Decision #25): "any unprocessed outbox message
         // replayed from dead letter X". No FK — the dead letter stays visible and deletable
         // independently of a replay in flight.
-        builder.HasIndex(ob => ob.ReplaySourceDeadLetterId);
+        // Enforced as a FILTERED UNIQUE index over the "in flight" subset (Decision #26): the
+        // filter makes both the idempotency rule race-proof — two concurrent replays of the same
+        // dead letter cannot both insert an unprocessed requeue — and the index small (only rows
+        // where IsProcessed = false participate, and each dead letter can have at most one of
+        // those). Processed/exhausted requeues leave the index; a later re-replay is allowed.
+        builder.HasIndex(ob => ob.ReplaySourceDeadLetterId)
+            .HasDatabaseName("UX_OutboxMessages_ReplaySourceDeadLetterId_Unprocessed")
+            .IsUnique()
+            // SQL Server's unfiltered unique index treats multiple NULLs as duplicates, so the
+            // filter must exclude both processed rows and the (overwhelmingly common) rows with no
+            // replay source. Only "an unprocessed requeue exists for dead letter X" participates.
+            .HasFilter("[ReplaySourceDeadLetterId] IS NOT NULL AND [IsProcessed] = CAST(0 AS bit)");
 
         // Navigation properties (denormalized for querying)
         // No foreign key for TenantId as it's denormalized for performance

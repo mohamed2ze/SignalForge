@@ -41,9 +41,11 @@ string used in `printf`. Serving clients should sign the same buffer they send (
 
 ## Getting the secret
 
-- `docker compose up -d --build` prints the seeded secret once to the API container logs
-  (`[Seed] ... Webhook signing secret for local dev: ...`) or read `.env` / appsettings override
-  `Seed:SigningSecret`.
+- The seeder generates credentials with a cryptographic RNG. By default they are **not** printed
+  to logs (the signing secret must never appear in logs — Decision #23). For local dev only, set
+  `Seed:ExposeGeneratedSecrets=true` to echo them once to the API container logs
+  (`[Seed] ... Webhook signing secret for local dev: ...`), or provide a fixed value via `.env` /
+  appsettings override `Seed:SigningSecret`.
 - In tests, every host that seeds the shared tenant must supply a **deterministic**
   `Seed:SigningSecret` (e.g. `ApiTestFactory.SigningSecret`); a random one leaks into tests that
   share the tenant and breaks their signature verification (see Decision #23 Consequences).

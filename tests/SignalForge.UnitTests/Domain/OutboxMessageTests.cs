@@ -66,6 +66,37 @@ public class OutboxMessageTests
     }
 
     [Fact]
+    public void ScheduleNextRetry_requires_a_failure_first()
+    {
+        var message = OutboxMessage.Create(Guid.NewGuid(), "type", "{}");
+
+        Assert.Throws<InvalidOperationException>(() =>
+            message.ScheduleNextRetry(DateTime.UtcNow.AddSeconds(2)));
+    }
+
+    [Fact]
+    public void ScheduleNextRetry_requires_utc()
+    {
+        var message = OutboxMessage.Create(Guid.NewGuid(), "type", "{}");
+        message.MarkAsFailed("boom");
+
+        Assert.Throws<ArgumentException>(() =>
+            message.ScheduleNextRetry(DateTime.Now.AddSeconds(2)));
+    }
+
+    [Fact]
+    public void ScheduleNextRetry_sets_the_retry_gate()
+    {
+        var message = OutboxMessage.Create(Guid.NewGuid(), "type", "{}");
+        message.MarkAsFailed("boom");
+        var retryAt = DateTime.UtcNow.AddSeconds(4);
+
+        message.ScheduleNextRetry(retryAt);
+
+        Assert.Equal(retryAt, message.NextRetryAt);
+    }
+
+    [Fact]
     public void IncrementAttempt_counts_attempts()
     {
         var message = OutboxMessage.Create(Guid.NewGuid(), "type", "{}");

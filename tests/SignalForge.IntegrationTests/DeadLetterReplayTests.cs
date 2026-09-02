@@ -188,10 +188,16 @@ public sealed class DeadLetterReplayTests : IDisposable
             Assert.Equal(HttpStatusCode.OK, replayed.StatusCode);
 
             // Drive the real outbox processor with the Test/Fail seam (throws before publishing):
-            // MaxAttempts = 3 failing cycles => attempt 1, 2, then dead-letter on the 3rd.
+            // MaxAttempts = 3 failing cycles => attempt 1, 2, then dead-letter on the 3rd. The
+            // per-message retry gate (Decision #26) is collapsed between cycles so the attempts
+            // run back-to-back here instead of over the real 2s/4s backoff.
             var processor = CreateProcessor();
             for (var i = 0; i < 3; i++)
+            {
                 await processor.ProcessBatchAsync(CancellationToken.None);
+                if (i < 2)
+                    await MakeReplayRetryDueAsync(originalId);
+            }
 
             using (var verify = new SignalForgeDbContext(DbOptions()))
             {
@@ -334,6 +340,17 @@ public sealed class DeadLetterReplayTests : IDisposable
                 MaxBackoffSeconds = 300
             }),
             NullLogger<OutboxProcessor>.Instance);
+    }
+
+    // Collapses the per-message retry gate for a dead letter's in-flight requeue so the next
+    // processor cycle re-claims it. Uses the EF value-sink idiom from the observability tests.
+    private async Task MakeReplayRetryDueAsync(Guid sourceDeadLetterId)
+    {
+        using var ctx = new SignalForgeDbContext(DbOptions());
+        var requeue = await ctx.OutboxMessages
+            .SingleAsync(m => m.ReplaySourceDeadLetterId == sourceDeadLetterId);
+        ctx.Entry(requeue).Property(m => m.NextRetryAt).CurrentValue = DateTime.UtcNow.AddSeconds(-1);
+        await ctx.SaveChangesAsync();
     }
 
     private static async Task<(int TotalCount, int PageSize, int Page, List<JsonObject> Items)> GetPagedAsync(

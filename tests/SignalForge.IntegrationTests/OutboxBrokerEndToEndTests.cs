@@ -126,10 +126,15 @@ public class OutboxBrokerEndToEndTests
                 MaxBackoffSeconds = 300
             });
 
-            // MaxAttempts = 3 failing cycles => attempt 1, 2, then dead-letter on the 3rd.
-            await processor.ProcessBatchAsync(CancellationToken.None);
-            await processor.ProcessBatchAsync(CancellationToken.None);
-            await processor.ProcessBatchAsync(CancellationToken.None);
+            // MaxAttempts = 3 failing cycles => attempt 1, 2, then dead-letter on the 3rd. The
+            // per-message retry gate (Decision #26) is collapsed between cycles so the attempts
+            // run back-to-back here instead of over the real 2s/4s backoff.
+            for (var i = 0; i < 3; i++)
+            {
+                await processor.ProcessBatchAsync(CancellationToken.None);
+                if (i < 2)
+                    await MakeRetryDueAsync(options);
+            }
 
             // Nothing reached the broker (the Test/Fail seam throws before publishing).
             Assert.Empty(broker.GetAll());
@@ -153,6 +158,16 @@ public class OutboxBrokerEndToEndTests
         {
             await CleanupAsync(options);
         }
+    }
+
+    // Collapses the per-message retry gate for the tenant's in-flight message so the next processor
+    // cycle re-claims it. Uses the EF value-sink idiom from the observability tests.
+    private static async Task MakeRetryDueAsync(DbContextOptions<SignalForgeDbContext> options)
+    {
+        using var ctx = new SignalForgeDbContext(options);
+        var message = await ctx.OutboxMessages.Where(m => m.TenantId == TenantId).SingleAsync();
+        ctx.Entry(message).Property(m => m.NextRetryAt).CurrentValue = DateTime.UtcNow.AddSeconds(-1);
+        await ctx.SaveChangesAsync();
     }
 
     private static async Task CleanupAsync(DbContextOptions<SignalForgeDbContext> options)

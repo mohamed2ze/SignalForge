@@ -127,11 +127,37 @@ public class DeadLetterProcessingService : IDeadLetterProcessingService
             deadLetter.Id);
 
         _dbContext.OutboxMessages.Add(outboxMessage);
+        var previousReplayCount = deadLetter.ReplayCount;
+        var previousLastReplayedAt = deadLetter.LastReplayedAt;
         deadLetter.RecordReplay();
 
-        await _dbContext.SaveChangesAsync(cancellationToken);
+        try
+        {
+            await _dbContext.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateException ex) when (IsUniqueViolation(ex))
+        {
+            // Two concurrent replays of the same dead letter both passed the in-flight check
+            // above; the filtered unique index (Decision #26) let only one requeue through. The
+            // whole batch was rolled back at the DB, so unwind our in-memory changes and report
+            // the idempotent outcome. (Remove on an Added entity detaches it; it will not be
+            // re-inserted by a later SaveChanges in the same scope.)
+            _dbContext.OutboxMessages.Remove(outboxMessage);
+            deadLetter.RollBackReplay(previousReplayCount, previousLastReplayedAt);
+            return new DeadLetterReplayResult(DeadLetterReplayStatus.AlreadyInFlight, deadLetter);
+        }
 
         return new DeadLetterReplayResult(DeadLetterReplayStatus.Replayed, deadLetter);
+    }
+
+    private static bool IsUniqueViolation(DbUpdateException ex)
+    {
+        if (ex.InnerException is not System.Data.Common.DbException dbException ||
+            dbException.SqlState is null)
+            return false;
+
+        // SQL Server: 2601/2627 = unique index / primary key. Postgres: 23505.
+        return dbException.SqlState is "2601" or "2627" or "23505";
     }
 
     /// <inheritdoc />

@@ -134,9 +134,10 @@ The API is protected by **API-key authentication**:
 - The tenant is resolved from the authenticated key and injected into identity claims
   (`tenant_id`, `api_key_id`); every entity is tenant-scoped.
 
-On first startup the API **seeds** a default tenant and a sample API key (idempotent). The
-plain-text key is logged once on the first seed — copy it from the API startup log. Re-running
-never duplicates it.
+On first startup the API **seeds** a default tenant and a sample API key (idempotent). Generated
+credentials are **not** printed by default (the webhook signing secret must never reach logs). For
+local dev, set `Seed:ExposeGeneratedSecrets=true` to print them once at seed time. Re-running
+never duplicates them.
 
 ---
 

@@ -173,19 +173,39 @@ try
             plainTextApiKey: seedSection.GetValue<string>("DefaultApiKey"),
             signingSecretOverride: seedSection.GetValue<string>("SigningSecret"));
 
-        if (seed.ApiKey is not null || seed.SigningSecret is not null)
+        // Default is to NOT print generated credentials: the signing secret is stored in
+        // recoverable form for HMAC at request time (Decision #23) and must not end up in logs.
+        // Set Seed:ExposeGeneratedSecrets=true (local dev only) to echo the sample keys.
+        if (seedSection.GetValue<bool>("ExposeGeneratedSecrets", false))
         {
-            var seederMessage =
-                $"[Seed] Created default tenant {DatabaseSeeder.DefaultTenantId}.";
-            if (seed.ApiKey is not null)
-                seederMessage += $" Sample API key for local dev: {seed.ApiKey}";
-            if (seed.SigningSecret is not null)
-                seederMessage += $" Webhook signing secret for local dev: {seed.SigningSecret}";
-            seederLogger.LogInformation("{Message}", seederMessage);
+            if (seed.ApiKey is not null || seed.SigningSecret is not null)
+            {
+                var seederMessage =
+                    $"[Seed] Created default tenant {DatabaseSeeder.DefaultTenantId}.";
+                if (seed.ApiKey is not null)
+                    seederMessage += $" Sample API key for local dev: {seed.ApiKey}";
+                if (seed.SigningSecret is not null)
+                    seederMessage += $" Webhook signing secret for local dev: {seed.SigningSecret}";
+                seederLogger.LogInformation("{Message}", seederMessage);
+            }
+            else
+            {
+                seederLogger.LogDebug("[Seed] Default tenant already seeded; nothing to add.");
+            }
         }
         else
         {
-            seederLogger.LogDebug("[Seed] Default tenant already seeded; nothing to add.");
+            if (seed.ApiKey is not null || seed.SigningSecret is not null)
+            {
+                seederLogger.LogInformation(
+                    "[Seed] Created default tenant {TenantId} with generated credentials. " +
+                    "Set Seed:ExposeGeneratedSecrets=true to print them (local dev only).",
+                    DatabaseSeeder.DefaultTenantId);
+            }
+            else
+            {
+                seederLogger.LogDebug("[Seed] Default tenant already seeded; nothing to add.");
+            }
         }
     }
 }

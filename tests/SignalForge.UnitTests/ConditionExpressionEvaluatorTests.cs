@@ -138,4 +138,45 @@ public class ConditionExpressionEvaluatorTests
         Assert.True(ConditionExpressionEvaluator.Evaluate("true", null).Value);
         Assert.False(ConditionExpressionEvaluator.Evaluate("not true", null).Value);
     }
+
+    // ---------- resource guards (Decision #26) ----------
+
+    [Fact]
+    public void Overlong_expression_fails_fast_with_error()
+    {
+        var expression = new string('a', ConditionExpressionEvaluator.MaxExpressionLength + 1);
+
+        var result = ConditionExpressionEvaluator.Evaluate(expression, Context);
+
+        Assert.False(result.Value);
+        Assert.NotNull(result.Error);
+        Assert.Contains("maximum length", result.Error);
+    }
+
+    [Fact]
+    public void Deeply_nested_parentheses_are_rejected_without_throwing()
+    {
+        // 1000 nested parens — far beyond MaxParseDepth; must fail fast, not recurse forever.
+        var expression = new string('(', 1000) + "true" + new string(')', 1000);
+
+        var result = ConditionExpressionEvaluator.Evaluate(expression, Context);
+
+        Assert.False(result.Value);
+        Assert.NotNull(result.Error);
+        Assert.Contains("nesting depth", result.Error);
+    }
+
+    [Fact]
+    public void Deep_not_chains_are_rejected_without_throwing()
+    {
+        // 300 chained 'not's (~1200 chars, within the length limit) — bounded by MaxParseDepth;
+        // must not overflow the stack.
+        var expression = string.Concat(Enumerable.Repeat("not ", 300)) + "true";
+
+        var result = ConditionExpressionEvaluator.Evaluate(expression, Context);
+
+        Assert.False(result.Value);
+        Assert.NotNull(result.Error);
+        Assert.Contains("nesting depth", result.Error);
+    }
 }
