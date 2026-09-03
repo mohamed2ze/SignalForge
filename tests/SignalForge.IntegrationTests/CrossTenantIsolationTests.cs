@@ -13,41 +13,33 @@ namespace SignalForge.IntegrationTests;
 /// Server. Reserved prefix bytes keep the two keys distinct at first-8-chars lookup.
 /// </summary>
 [Collection(MsSqlCollection.Name)]
-public class CrossTenantIsolationTests
+public class CrossTenantIsolationTests : ApiTestBase
 {
     private static readonly Guid TenantA = Guid.NewGuid();
     private static readonly Guid TenantB = Guid.NewGuid();
     private static readonly string KeyA = $"aA{Guid.NewGuid():N}tenantA";
     private static readonly string KeyB = $"bB{Guid.NewGuid():N}tenantB";
 
-    private readonly MsSqlContainerFixture _database;
-
     public CrossTenantIsolationTests(MsSqlContainerFixture database)
+        : base(database)
     {
-        _database = database;
     }
 
-    private DbContextOptions<SignalForgeDbContext> TestOptions()
-        => new DbContextOptionsBuilder<SignalForgeDbContext>().UseSqlServer(_database.ConnectionString).Options;
-
-    private static async Task SeedAsync(DbContextOptions<SignalForgeDbContext> options)
+    private async Task SeedAsync()
     {
-        using var ctx = new SignalForgeDbContext(options);
-        ctx.Tenants.Add(Tenant.CreateWithId(TenantA, "itest-tenant-a"));
-        ctx.Tenants.Add(Tenant.CreateWithId(TenantB, "itest-tenant-b"));
-        ctx.ApiKeys.Add(ApiKey.Create(TenantA, "itest-key-a", KeyA));
-        ctx.ApiKeys.Add(ApiKey.Create(TenantB, "itest-key-b", KeyB));
-        await ctx.SaveChangesAsync();
+        using var ctx = new SignalForgeDbContext(DbOptions());
+        await EnsureTenantAsync(ctx, TenantA, "itest-tenant-a", KeyA);
+        await EnsureTenantAsync(ctx, TenantB, "itest-tenant-b", KeyB);
     }
 
     [Fact]
     public async Task ApiKeys_Resolve_Only_Their_Own_Tenant()
     {
-        var options = TestOptions();
+        var options = DbOptions();
 
         try
         {
-            await SeedAsync(options);
+            await SeedAsync();
 
             using var ctx = new SignalForgeDbContext(options);
             var validator = new ApiKeyValidationService(ctx);
@@ -63,18 +55,18 @@ public class CrossTenantIsolationTests
         }
         finally
         {
-            await CleanupAsync(options);
+            await CleanupAsync(TenantA, TenantB);
         }
     }
 
     [Fact]
     public async Task Workflows_Cannot_Be_Cross_Read()
     {
-        var options = TestOptions();
+        var options = DbOptions();
 
         try
         {
-            await SeedAsync(options);
+            await SeedAsync();
 
             using var ctx = new SignalForgeDbContext(options);
             var serviceA = new WorkflowService(ctx, NullLogger<WorkflowService>.Instance);
@@ -110,18 +102,18 @@ public class CrossTenantIsolationTests
         }
         finally
         {
-            await CleanupAsync(options);
+            await CleanupAsync(TenantA, TenantB);
         }
     }
 
     [Fact]
     public async Task Events_Cannot_Be_Cross_Read()
     {
-        var options = TestOptions();
+        var options = DbOptions();
 
         try
         {
-            await SeedAsync(options);
+            await SeedAsync();
 
             using var ctx = new SignalForgeDbContext(options);
             var outboxPublisher = new OutboxPublisher(ctx);
@@ -149,18 +141,18 @@ public class CrossTenantIsolationTests
         }
         finally
         {
-            await CleanupAsync(options);
+            await CleanupAsync(TenantA, TenantB);
         }
     }
 
     [Fact]
     public async Task Executions_Cannot_Be_Cross_Read()
     {
-        var options = TestOptions();
+        var options = DbOptions();
 
         try
         {
-            await SeedAsync(options);
+            await SeedAsync();
 
             Guid executionId;
             using (var ctx = new SignalForgeDbContext(options))
@@ -184,18 +176,18 @@ public class CrossTenantIsolationTests
         }
         finally
         {
-            await CleanupAsync(options);
+            await CleanupAsync(TenantA, TenantB);
         }
     }
 
     [Fact]
     public async Task DeadLetters_Cannot_Be_Cross_Read()
     {
-        var options = TestOptions();
+        var options = DbOptions();
 
         try
         {
-            await SeedAsync(options);
+            await SeedAsync();
 
             Guid deadLetterId;
             using (var ctx = new SignalForgeDbContext(options))
@@ -225,34 +217,7 @@ public class CrossTenantIsolationTests
         }
         finally
         {
-            await CleanupAsync(options);
+            await CleanupAsync(TenantA, TenantB);
         }
-    }
-
-    private static async Task CleanupAsync(DbContextOptions<SignalForgeDbContext> options)
-    {
-        using var cleanup = new SignalForgeDbContext(options);
-
-        foreach (var tenantId in new[] { TenantA, TenantB })
-        {
-            // FK-safe order: children referencing NoAction parents go first (executions before
-            // workflows/events/versions), dead letters before the executions they may reference.
-            cleanup.DeadLetterMessages.RemoveRange(await cleanup.DeadLetterMessages.IgnoreQueryFilters()
-                .Where(e => e.TenantId == tenantId).ToListAsync());
-            cleanup.OutboxMessages.RemoveRange(await cleanup.OutboxMessages.IgnoreQueryFilters()
-                .Where(e => e.TenantId == tenantId).ToListAsync());
-            cleanup.WorkflowExecutions.RemoveRange(await cleanup.WorkflowExecutions.IgnoreQueryFilters()
-                .Where(e => e.TenantId == tenantId).ToListAsync());
-            cleanup.ApiKeys.RemoveRange(await cleanup.ApiKeys.IgnoreQueryFilters()
-                .Where(k => k.TenantId == tenantId).ToListAsync());
-            cleanup.Events.RemoveRange(await cleanup.Events.IgnoreQueryFilters()
-                .Where(e => e.TenantId == tenantId).ToListAsync());
-            cleanup.Workflows.RemoveRange(await cleanup.Workflows.IgnoreQueryFilters()
-                .Where(w => w.TenantId == tenantId).ToListAsync());
-            cleanup.Tenants.RemoveRange(await cleanup.Tenants.IgnoreQueryFilters()
-                .Where(t => t.Id == tenantId).ToListAsync());
-        }
-
-        await cleanup.SaveChangesAsync();
     }
 }

@@ -15,7 +15,7 @@ namespace SignalForge.IntegrationTests;
 /// the EF change tracker so aggregate values are exact rather than timing-dependent.
 /// </summary>
 [Collection(MsSqlCollection.Name)]
-public sealed class ExecutionsObservabilityTests : IDisposable
+public sealed class ExecutionsObservabilityTests : ApiTestBase
 {
     private const string WfAName = "obs-wf-a";
     private const string WfBName = "obs-wf-b";
@@ -23,32 +23,21 @@ public sealed class ExecutionsObservabilityTests : IDisposable
     private static readonly Guid TenantB = Guid.NewGuid();
     private static readonly string KeyB = $"bB{Guid.NewGuid():N}TenantB";
 
-    private readonly MsSqlContainerFixture _database;
-    private readonly ApiTestFactory _factory;
-
     private Guid _wfAId;
     private Guid _wfBId;
     private DateTime _seedUtc;
     private bool _seeded;
 
     public ExecutionsObservabilityTests(MsSqlContainerFixture database)
+        : base(database)
     {
-        _database = database;
-        _factory = new ApiTestFactory(database);
     }
-
-    public void Dispose() => _factory.Dispose();
-
-    private DbContextOptions<SignalForgeDbContext> DbOptions()
-        => new DbContextOptionsBuilder<SignalForgeDbContext>()
-            .UseSqlServer(_database.ConnectionString)
-            .Options;
 
     [Fact]
     public async Task Executions_List_Filtered_Paged()
     {
         await SeedHistoryAsync();
-        var client = _factory.CreateClientForSeededTenant();
+        var client = Factory.CreateClientForSeededTenant();
 
         // All of tenant A's wfA history (exact: other test classes can't touch our workflows).
         var all = JsonNode.Parse(await client
@@ -99,7 +88,7 @@ public sealed class ExecutionsObservabilityTests : IDisposable
     public async Task Executions_TimeWindow_Filters()
     {
         await SeedHistoryAsync();
-        var client = _factory.CreateClientForSeededTenant();
+        var client = Factory.CreateClientForSeededTenant();
 
         // The failed execution is 2h old -> outside a 15-minute window; the rest are within.
         var from = _seedUtc.AddHours(-2).AddSeconds(1);
@@ -128,7 +117,7 @@ public sealed class ExecutionsObservabilityTests : IDisposable
     public async Task Aggregates_ReturnStatusCounts_AndStepLatency()
     {
         await SeedHistoryAsync();
-        var client = _factory.CreateClientForSeededTenant();
+        var client = Factory.CreateClientForSeededTenant();
 
         var aggregates = JsonNode.Parse(await client
             .GetStringAsync($"/api/executions/aggregates?workflowId={_wfAId}"))!.AsObject();
@@ -173,7 +162,7 @@ public sealed class ExecutionsObservabilityTests : IDisposable
     public async Task Aggregates_IncludeFailedExecutionCauses_AndRetries()
     {
         await SeedHistoryAsync();
-        var client = _factory.CreateClientForSeededTenant();
+        var client = Factory.CreateClientForSeededTenant();
 
         var aggregates = JsonNode.Parse(await client
             .GetStringAsync($"/api/executions/aggregates?workflowId={_wfBId}"))!.AsObject();
@@ -199,8 +188,8 @@ public sealed class ExecutionsObservabilityTests : IDisposable
     {
         await SeedHistoryAsync();
         await SeedTenantBAsync();
-        var clientA = _factory.CreateClientForSeededTenant();
-        var clientB = _factory.CreateClient(KeyB);
+        var clientA = Factory.CreateClientForSeededTenant();
+        var clientB = Factory.CreateClient(KeyB);
 
         var fromA = await clientA.GetAsync($"/api/executions?workflowId={_wfAId}");
         Assert.Equal(HttpStatusCode.OK, fromA.StatusCode);
@@ -225,7 +214,7 @@ public sealed class ExecutionsObservabilityTests : IDisposable
     public async Task Executions_InvalidFilters_Return400(string query)
     {
         await SeedHistoryAsync();
-        var client = _factory.CreateClientForSeededTenant();
+        var client = Factory.CreateClientForSeededTenant();
 
         var response = await client.GetAsync($"/api/executions{query}");
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
@@ -263,9 +252,7 @@ public sealed class ExecutionsObservabilityTests : IDisposable
         // The API-host's startup seeder may not have run yet for this test instance, so the tenant
         // row must exist before workflows/events can reference it (FK_Workflows_Tenants_TenantId).
         using var ctx = new SignalForgeDbContext(DbOptions());
-        if (!await ctx.Tenants.AnyAsync(t => t.Id == tenantId))
-            ctx.Tenants.Add(Tenant.CreateWithId(tenantId, ApiTestFactory.TenantName));
-        await ctx.SaveChangesAsync();
+        await EnsureTenantAsync(ctx, tenantId, ApiTestFactory.TenantName, ApiTestFactory.ApiKey);
 
         // wfA: LogAudit(1) -> Delay(2) -> NotificationSimulation(3).
         var workflowA = Workflow.Create(tenantId, WfAName, "observability workflow A");
@@ -380,13 +367,6 @@ public sealed class ExecutionsObservabilityTests : IDisposable
     private async Task SeedTenantBAsync()
     {
         using var ctx = new SignalForgeDbContext(DbOptions());
-        if (!await ctx.ApiKeys.AnyAsync(ak => ak.KeyPrefix == KeyB.Substring(0, 8)))
-        {
-            ctx.Tenants.Add(Tenant.CreateWithId(TenantB, "itest-tenant-b"));
-            ctx.ApiKeys.Add(ApiKey.Create(TenantB, "itest-key-b", KeyB));
-            ctx.TenantWebhookSigningSettings.Add(
-                TenantWebhookSigningSetting.Create(TenantB, "sfTestK2-tenant-b-signing-secret"));
-            await ctx.SaveChangesAsync();
-        }
+        await EnsureTenantAsync(ctx, TenantB, "itest-tenant-b", KeyB, "sfTestK2-tenant-b-signing-secret");
     }
 }

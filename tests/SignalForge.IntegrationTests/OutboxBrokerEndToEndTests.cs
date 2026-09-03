@@ -13,19 +13,14 @@ using SignalForge.Worker.Services;
 namespace SignalForge.IntegrationTests;
 
 [Collection(MsSqlCollection.Name)]
-public class OutboxBrokerEndToEndTests
+public class OutboxBrokerEndToEndTests : ApiTestBase
 {
     private static readonly Guid TenantId = Guid.NewGuid();
 
-    private readonly MsSqlContainerFixture _database;
-
     public OutboxBrokerEndToEndTests(MsSqlContainerFixture database)
+        : base(database)
     {
-        _database = database;
     }
-
-    private DbContextOptions<SignalForgeDbContext> TestOptions()
-        => new DbContextOptionsBuilder<SignalForgeDbContext>().UseSqlServer(_database.ConnectionString).Options;
 
     private static OutboxProcessor CreateProcessor(
         DbContextOptions<SignalForgeDbContext> options,
@@ -46,7 +41,7 @@ public class OutboxBrokerEndToEndTests
     [Fact]
     public async Task OutboxMessage_Transits_Into_InMemoryBroker()
     {
-        var options = TestOptions();
+        var options = DbOptions();
 
         try
         {
@@ -97,14 +92,14 @@ public class OutboxBrokerEndToEndTests
         }
         finally
         {
-            await CleanupAsync(options);
+            await CleanupAsync(TenantId);
         }
     }
 
     [Fact]
     public async Task TestFail_Still_DeadLetters_After_Broker_Swap()
     {
-        var options = TestOptions();
+        var options = DbOptions();
 
         try
         {
@@ -156,7 +151,7 @@ public class OutboxBrokerEndToEndTests
         }
         finally
         {
-            await CleanupAsync(options);
+            await CleanupAsync(TenantId);
         }
     }
 
@@ -168,26 +163,5 @@ public class OutboxBrokerEndToEndTests
         var message = await ctx.OutboxMessages.Where(m => m.TenantId == TenantId).SingleAsync();
         ctx.Entry(message).Property(m => m.NextRetryAt).CurrentValue = DateTime.UtcNow.AddSeconds(-1);
         await ctx.SaveChangesAsync();
-    }
-
-    private static async Task CleanupAsync(DbContextOptions<SignalForgeDbContext> options)
-    {
-        using var cleanup = new SignalForgeDbContext(options);
-
-        var deadLetters = await cleanup.DeadLetterMessages.IgnoreQueryFilters()
-            .Where(d => d.TenantId == TenantId)
-            .ToListAsync();
-        cleanup.DeadLetterMessages.RemoveRange(deadLetters);
-
-        var outbox = await cleanup.OutboxMessages.IgnoreQueryFilters()
-            .Where(m => m.TenantId == TenantId)
-            .ToListAsync();
-        cleanup.OutboxMessages.RemoveRange(outbox);
-
-        var tenant = await cleanup.Tenants.IgnoreQueryFilters().FirstOrDefaultAsync(t => t.Id == TenantId);
-        if (tenant != null)
-            cleanup.Tenants.Remove(tenant);
-
-        await cleanup.SaveChangesAsync();
     }
 }

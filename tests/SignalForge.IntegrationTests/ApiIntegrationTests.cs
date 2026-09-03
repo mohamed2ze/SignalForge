@@ -1,10 +1,7 @@
 using System.Net;
 using System.Net.Http.Json;
-using System.Text.Json;
 using System.Text.Json.Nodes;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.DependencyInjection;
-using SignalForge.Application.Services;
 using SignalForge.Domain.Models;
 using SignalForge.Infrastructure.Data;
 
@@ -16,39 +13,23 @@ namespace SignalForge.IntegrationTests;
 /// controllers, application services, EF persistence, and the domain model — no mocks.
 /// </summary>
 [Collection(MsSqlCollection.Name)]
-public sealed class ApiIntegrationTests : IDisposable
+public sealed class ApiIntegrationTests : ApiTestBase
 {
-    private const string ApiRoute = "api";
-
     private static readonly Guid TenantB = Guid.NewGuid();
     private static readonly string KeyB = $"bB{Guid.NewGuid():N}TenantB";
     private const string SecretB = "sfTestK2-tenant-b-signing-secret";
 
-    private readonly MsSqlContainerFixture _database;
-    private readonly ApiTestFactory _factory;
-
     public ApiIntegrationTests(MsSqlContainerFixture database)
+        : base(database)
     {
-        _database = database;
-        _factory = new ApiTestFactory(database);
     }
-
-    public void Dispose()
-    {
-        _factory.Dispose();
-    }
-
-    private DbContextOptions<SignalForgeDbContext> DbOptions()
-        => new DbContextOptionsBuilder<SignalForgeDbContext>()
-            .UseSqlServer(_database.ConnectionString)
-            .Options;
 
     // ---------- API-key authentication ----------
 
     [Fact]
     public async Task NoApiKey_Returns_401()
     {
-        var client = _factory.CreateClient();
+        var client = Factory.CreateClient();
 
         var response = await client.GetAsync("/TestAuth/me");
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
@@ -57,7 +38,7 @@ public sealed class ApiIntegrationTests : IDisposable
     [Fact]
     public async Task InvalidApiKey_Returns_401()
     {
-        var client = _factory.CreateClient("definitely-not-a-real-key-123456");
+        var client = Factory.CreateClient("definitely-not-a-real-key-123456");
 
         var response = await client.GetAsync("/TestAuth/me");
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
@@ -66,7 +47,7 @@ public sealed class ApiIntegrationTests : IDisposable
     [Fact]
     public async Task SeededApiKey_Authenticates_To_Seeded_Tenant()
     {
-        var client = _factory.CreateClientForSeededTenant();
+        var client = Factory.CreateClientForSeededTenant();
 
         var response = await client.GetAsync("/TestAuth/me");
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -83,7 +64,7 @@ public sealed class ApiIntegrationTests : IDisposable
     [Fact]
     public async Task IngestEvent_Returns201_Then_Idempotent_200_WithSameId()
     {
-        var client = _factory.CreateClientForSeededTenant();
+        var client = Factory.CreateClientForSeededTenant();
         var externalId = $"ext-{Guid.NewGuid():N}";
 
         var createPayload = new
@@ -113,7 +94,7 @@ public sealed class ApiIntegrationTests : IDisposable
     [Fact]
     public async Task IngestEvent_Missing_ExternalId_Returns_400()
     {
-        var client = _factory.CreateClientForSeededTenant();
+        var client = Factory.CreateClientForSeededTenant();
 
         var rawMissingExternalId = EventSigner.CamelJson(new
         {
@@ -131,7 +112,7 @@ public sealed class ApiIntegrationTests : IDisposable
     [Fact]
     public async Task IngestEvent_WithoutSignature_Returns_401()
     {
-        var client = _factory.CreateClientForSeededTenant();
+        var client = Factory.CreateClientForSeededTenant();
         var rawJson = EventSigner.CamelJson(new
         {
             ExternalEventId = $"ext-unsigned-{Guid.NewGuid():N}",
@@ -148,7 +129,7 @@ public sealed class ApiIntegrationTests : IDisposable
     [Fact]
     public async Task IngestEvent_WithTamperedBody_Returns_401()
     {
-        var client = _factory.CreateClientForSeededTenant();
+        var client = Factory.CreateClientForSeededTenant();
         var rawJson = EventSigner.CamelJson(new
         {
             ExternalEventId = $"ext-tampered-{Guid.NewGuid():N}",
@@ -173,7 +154,7 @@ public sealed class ApiIntegrationTests : IDisposable
     [Fact]
     public async Task IngestEvent_WithWrongSecret_Returns_401()
     {
-        var client = _factory.CreateClientForSeededTenant();
+        var client = Factory.CreateClientForSeededTenant();
         var rawJson = EventSigner.CamelJson(new
         {
             ExternalEventId = $"ext-wrong-secret-{Guid.NewGuid():N}",
@@ -190,7 +171,7 @@ public sealed class ApiIntegrationTests : IDisposable
     [Fact]
     public async Task IngestEvent_WithStaleTimestamp_Returns_401()
     {
-        var client = _factory.CreateClientForSeededTenant();
+        var client = Factory.CreateClientForSeededTenant();
         var rawJson = EventSigner.CamelJson(new
         {
             ExternalEventId = $"ext-stale-{Guid.NewGuid():N}",
@@ -208,7 +189,7 @@ public sealed class ApiIntegrationTests : IDisposable
     [Fact]
     public async Task IngestEvent_SignedWithTenantBSecret_OnTenantA_Returns_401()
     {
-        var client = _factory.CreateClientForSeededTenant();
+        var client = Factory.CreateClientForSeededTenant();
         await SeedTenantBAsync();
         var rawJson = EventSigner.CamelJson(new
         {
@@ -228,10 +209,10 @@ public sealed class ApiIntegrationTests : IDisposable
     [Fact]
     public async Task CrossTenant_Events_Are_Isolated_Over_Http()
     {
-        var clientA = _factory.CreateClientForSeededTenant();
+        var clientA = Factory.CreateClientForSeededTenant();
         await SeedTenantBAsync();
 
-        var clientB = _factory.CreateClient(KeyB);
+        var clientB = Factory.CreateClient(KeyB);
         var externalId = $"ext-cross-{Guid.NewGuid():N}";
 
         // Tenant A ingests.
@@ -267,7 +248,7 @@ public sealed class ApiIntegrationTests : IDisposable
     [Fact]
     public async Task Publish_Version_Without_Steps_Returns_400()
     {
-        var client = _factory.CreateClientForSeededTenant();
+        var client = Factory.CreateClientForSeededTenant();
 
         var workflow = await CreateWorkflowAsync(client, "empty-wf");
         var version = await CreateVersionAsync(client, workflow);
@@ -280,7 +261,7 @@ public sealed class ApiIntegrationTests : IDisposable
     [Fact]
     public async Task WorkflowLifecycle_EndToEnd_Over_Http()
     {
-        var client = _factory.CreateClientForSeededTenant();
+        var client = Factory.CreateClientForSeededTenant();
 
         // 1. Create workflow (draft version 1).
         var workflow = await CreateWorkflowAsync(client, "itest-e2e");
@@ -353,12 +334,12 @@ public sealed class ApiIntegrationTests : IDisposable
     [Fact]
     public async Task CrossTenant_Workflow_Not_Found_Over_Http()
     {
-        var clientA = _factory.CreateClientForSeededTenant();
+        var clientA = Factory.CreateClientForSeededTenant();
         await SeedTenantBAsync();
 
         var workflow = await CreateWorkflowAsync(clientA, "secret-wf");
 
-        var clientB = _factory.CreateClient(KeyB);
+        var clientB = Factory.CreateClient(KeyB);
         var crossRead = await clientB.GetAsync($"/{ApiRoute}/workflows/{workflow}");
         Assert.Equal(HttpStatusCode.NotFound, crossRead.StatusCode);
     }
@@ -368,7 +349,7 @@ public sealed class ApiIntegrationTests : IDisposable
     [Fact]
     public async Task DeadLetter_Lifecycle_Over_Http()
     {
-        var client = _factory.CreateClientForSeededTenant();
+        var client = Factory.CreateClientForSeededTenant();
         await SeedTenantBAsync();
 
         var deadLetterId = await SeedDeadLetterAsync();
@@ -410,7 +391,7 @@ public sealed class ApiIntegrationTests : IDisposable
         Assert.True((int)countsAfterObj["processed"]! >= 1);
 
         // Cross-tenant isolation: tenant B cannot see or process A's dead letter.
-        var clientB = _factory.CreateClient(KeyB);
+        var clientB = Factory.CreateClient(KeyB);
         var crossRead = await clientB.GetAsync($"/{ApiRoute}/deadLetter/{deadLetterId}");
         Assert.Equal(HttpStatusCode.NotFound, crossRead.StatusCode);
         var crossProcess = await clientB.PostAsync($"/{ApiRoute}/deadLetter/{deadLetterId}/process", null);
@@ -420,7 +401,7 @@ public sealed class ApiIntegrationTests : IDisposable
     [Fact]
     public async Task DeadLetter_Counts_Require_Auth()
     {
-        var anonymous = _factory.CreateClient();
+        var anonymous = Factory.CreateClient();
 
         var counts = await anonymous.GetAsync($"/{ApiRoute}/deadLetter/counts");
         Assert.Equal(HttpStatusCode.Unauthorized, counts.StatusCode);
@@ -428,50 +409,10 @@ public sealed class ApiIntegrationTests : IDisposable
 
     // ---------- helpers ----------
 
-    private async Task<Guid> CreateWorkflowAsync(HttpClient client, string name)
-    {
-        var response = await client.PostAsJsonAsync($"/{ApiRoute}/workflows", new { Name = name });
-        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
-        return Guid.Parse((string)JsonNode.Parse(await response.Content.ReadAsStringAsync())!["id"]!);
-    }
-
-    private async Task<Guid> CreateVersionAsync(HttpClient client, Guid workflowId)
-    {
-        var response = await client.PostAsJsonAsync(
-            $"/{ApiRoute}/workflows/{workflowId}/versions", new { Description = "v-next" });
-        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
-        return Guid.Parse((string)JsonNode.Parse(await response.Content.ReadAsStringAsync())!["id"]!);
-    }
-
-    private async Task<bool> WorkflowEnabledAsync(HttpClient client, Guid workflowId, bool expectedEnabled)
-    {
-        var response = await client.GetAsync($"/{ApiRoute}/workflows/{workflowId}");
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        var body = JsonNode.Parse(await response.Content.ReadAsStringAsync())!.AsObject();
-        Assert.Equal(expectedEnabled, (bool)body["isEnabled"]!);
-        return (bool)body["isEnabled"]!;
-    }
-
-    private async Task AdvanceAsync(Guid executionId)
-    {
-        using var scope = _factory.Services.CreateScope();
-        var orchestrator = scope.ServiceProvider.GetRequiredService<IWorkflowExecutionOrchestratorService>();
-        var advanced = await orchestrator.AdvanceWorkflowExecutionAsync(executionId);
-        Assert.True(advanced);
-    }
-
     private async Task SeedTenantBAsync()
     {
-        // Idempotent: the shared container DB persists across tests in the run.
         using var ctx = new SignalForgeDbContext(DbOptions());
-        if (!await ctx.ApiKeys.AnyAsync(ak => ak.KeyPrefix == KeyB.Substring(0, 8)))
-        {
-            ctx.Tenants.Add(Tenant.CreateWithId(TenantB, "itest-tenant-b"));
-            ctx.ApiKeys.Add(ApiKey.Create(TenantB, "itest-key-b", KeyB));
-            ctx.TenantWebhookSigningSettings.Add(
-                TenantWebhookSigningSetting.Create(TenantB, SecretB));
-            await ctx.SaveChangesAsync();
-        }
+        await EnsureTenantAsync(ctx, TenantB, "itest-tenant-b", KeyB, SecretB);
     }
 
     private async Task<Guid> SeedDeadLetterAsync()

@@ -4,10 +4,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
-using SignalForge.Application.Broker;
 using SignalForge.Application.Data;
-using SignalForge.Application.Services;
-using SignalForge.Domain.Enums;
 using SignalForge.Domain.Models;
 using SignalForge.Infrastructure.Broker;
 using SignalForge.Infrastructure.Data;
@@ -23,30 +20,17 @@ namespace SignalForge.IntegrationTests;
 /// regardless of what earlier tests left in the shared container DB.
 /// </summary>
 [Collection(MsSqlCollection.Name)]
-public sealed class DeadLetterReplayTests : IDisposable
+public sealed class DeadLetterReplayTests : ApiTestBase
 {
-    private const string ApiRoute = "api";
-
     private static readonly Guid TenantA = Guid.NewGuid();
     private static readonly Guid TenantB = Guid.NewGuid();
     private static readonly string KeyA = $"aA{Guid.NewGuid():N}dlTenantA";
     private static readonly string KeyB = $"bB{Guid.NewGuid():N}dlTenantB";
 
-    private readonly MsSqlContainerFixture _database;
-    private readonly ApiTestFactory _factory;
-
     public DeadLetterReplayTests(MsSqlContainerFixture database)
+        : base(database)
     {
-        _database = database;
-        _factory = new ApiTestFactory(database);
     }
-
-    public void Dispose() => _factory.Dispose();
-
-    private DbContextOptions<SignalForgeDbContext> DbOptions()
-        => new DbContextOptionsBuilder<SignalForgeDbContext>()
-            .UseSqlServer(_database.ConnectionString)
-            .Options;
 
     [Fact]
     public async Task List_Applies_Filters_And_Deterministic_Paging()
@@ -55,9 +39,9 @@ public sealed class DeadLetterReplayTests : IDisposable
         await SeedTenantsAsync();
 
         var seedUtc = DateTime.UtcNow;
-        var (workflowId, stepDeadLetter) = await SeedStepFailureDeadLetterAsync(ctx, seedUtc);
+        var (workflowId, stepDeadLetter) = await SeedStepFailureDeadLetterAsync(ctx, TenantA, "dl-step-wf", seedUtc.AddMinutes(-10));
         var (out1, out2) = await SeedOutboxDeadLettersAsync(ctx, seedUtc);
-        var client = _factory.CreateClient(KeyA);
+        var client = Factory.CreateClient(KeyA);
 
         try
         {
@@ -106,14 +90,14 @@ public sealed class DeadLetterReplayTests : IDisposable
             Assert.Equal(HttpStatusCode.BadRequest, badWindow.StatusCode);
 
             // Cross-tenant: nothing leaks to tenant B, and B can replay nothing of A's.
-            var clientB = _factory.CreateClient(KeyB);
+            var clientB = Factory.CreateClient(KeyB);
             var bList = await GetPagedAsync(clientB, "/api/deadLetter");
             Assert.Equal(0, bList.TotalCount);
             Assert.Empty(bList.Items);
         }
         finally
         {
-            await CleanupAsync();
+            await CleanupAsync(TenantA, TenantB);
         }
     }
 
@@ -123,7 +107,7 @@ public sealed class DeadLetterReplayTests : IDisposable
         using var ctx = new SignalForgeDbContext(DbOptions());
         await SeedTenantsAsync();
         var (_, deadLetterId) = await SeedOutboxDeadLettersAsync(ctx, DateTime.UtcNow);
-        var client = _factory.CreateClient(KeyA);
+        var client = Factory.CreateClient(KeyA);
 
         try
         {
@@ -162,7 +146,7 @@ public sealed class DeadLetterReplayTests : IDisposable
             }
 
             // Cross-tenant replay of A's dead letter: 404, and B sees no dead letters.
-            var clientB = _factory.CreateClient(KeyB);
+            var clientB = Factory.CreateClient(KeyB);
             var cross = await clientB.PostAsync($"/api/deadLetter/{deadLetterId}/replay", null);
             Assert.Equal(HttpStatusCode.NotFound, cross.StatusCode);
             var bList = await GetPagedAsync(clientB, "/api/deadLetter");
@@ -170,7 +154,7 @@ public sealed class DeadLetterReplayTests : IDisposable
         }
         finally
         {
-            await CleanupAsync();
+            await CleanupAsync(TenantA, TenantB);
         }
     }
 
@@ -180,7 +164,7 @@ public sealed class DeadLetterReplayTests : IDisposable
         using var ctx = new SignalForgeDbContext(DbOptions());
         await SeedTenantsAsync();
         var (_, originalId) = await SeedOutboxDeadLettersAsync(ctx, DateTime.UtcNow);
-        var client = _factory.CreateClient(KeyA);
+        var client = Factory.CreateClient(KeyA);
 
         try
         {
@@ -237,64 +221,17 @@ public sealed class DeadLetterReplayTests : IDisposable
         }
         finally
         {
-            await CleanupAsync();
+            await CleanupAsync(TenantA, TenantB);
         }
     }
 
     // ---------- helpers ----------
 
-    private static void SetWorkflowStepNavigation(WorkflowStepExecution execution, WorkflowStep step)
-    {
-        typeof(WorkflowStepExecution)
-            .GetProperty(nameof(WorkflowStepExecution.WorkflowStep))!
-            .GetSetMethod(nonPublic: true)!
-            .Invoke(execution, new object[] { step });
-    }
-
     private async Task SeedTenantsAsync()
     {
         using var ctx = new SignalForgeDbContext(DbOptions());
-        if (!await ctx.ApiKeys.AnyAsync(ak => ak.TenantId == TenantA))
-            ctx.ApiKeys.Add(ApiKey.Create(TenantA, "itest-dl-key-a", KeyA));
-        if (!await ctx.ApiKeys.AnyAsync(ak => ak.TenantId == TenantB))
-            ctx.ApiKeys.Add(ApiKey.Create(TenantB, "itest-dl-key-b", KeyB));
-        if (!await ctx.Tenants.AnyAsync(t => t.Id == TenantA))
-            ctx.Tenants.Add(Tenant.CreateWithId(TenantA, "itest-dl-tenant-a"));
-        if (!await ctx.Tenants.AnyAsync(t => t.Id == TenantB))
-            ctx.Tenants.Add(Tenant.CreateWithId(TenantB, "itest-dl-tenant-b"));
-        await ctx.SaveChangesAsync();
-    }
-
-    private async Task<(Guid workflowId, Guid deadLetterId)> SeedStepFailureDeadLetterAsync(
-        SignalForgeDbContext ctx, DateTime seedUtc)
-    {
-        var workflow = Workflow.Create(TenantA, "dl-step-wf", "step-failure seed workflow");
-        var version = WorkflowVersion.Create(workflow.Id, 1);
-        version.AddStep(1, nameof(StepType.HttpWebhook), """{"url":"http://127.0.0.1:59999"}""", "hook");
-        version.Publish();
-
-        var evt = Event.Create(TenantA, $"dl-step-{Guid.NewGuid():N}", "order.created", seedUtc, "{}");
-        var execution = WorkflowExecution.Create(workflow.Id, version.Id, evt.Id, TenantA);
-        execution.Start();
-
-        var step = version.Steps.Single(s => s.StepNumber == 1);
-        var stepExecution = WorkflowStepExecution.Create(execution.Id, step.Id, 1);
-        SetWorkflowStepNavigation(stepExecution, step);
-        stepExecution.Start();
-        stepExecution.Fail("connection refused");
-
-        var deadLetter = DeadLetterMessage.CreateFromFailedStep(stepExecution, execution);
-        ctx.Entry(deadLetter).Property(d => d.CreatedAt).CurrentValue = seedUtc.AddMinutes(-10);
-
-        ctx.Workflows.Add(workflow);
-        ctx.WorkflowVersions.Add(version);
-        ctx.Events.Add(evt);
-        ctx.WorkflowExecutions.Add(execution);
-        ctx.WorkflowStepExecutions.Add(stepExecution);
-        ctx.DeadLetterMessages.Add(deadLetter);
-        await ctx.SaveChangesAsync();
-
-        return (workflow.Id, deadLetter.Id);
+        await EnsureTenantAsync(ctx, TenantA, "itest-dl-tenant-a", KeyA);
+        await EnsureTenantAsync(ctx, TenantB, "itest-dl-tenant-b", KeyB);
     }
 
     private async Task<(Guid oldProcessed, Guid unprocessed)> SeedOutboxDeadLettersAsync(
@@ -365,56 +302,4 @@ public sealed class DeadLetterReplayTests : IDisposable
             (int)body["page"]!,
             body["items"]!.AsArray().Select(n => n!.AsObject()).ToList());
     }
-
-    private async Task CleanupAsync()
-    {
-        using var cleanup = new SignalForgeDbContext(DbOptions());
-
-        var deadLetters = await cleanup.DeadLetterMessages.IgnoreQueryFilters()
-            .Where(d => d.TenantId == TenantA).ToListAsync();
-        cleanup.DeadLetterMessages.RemoveRange(deadLetters);
-
-        var outbox = await cleanup.OutboxMessages.IgnoreQueryFilters()
-            .Where(m => m.TenantId == TenantA).ToListAsync();
-        cleanup.OutboxMessages.RemoveRange(outbox);
-
-        var stepExecs = await cleanup.WorkflowStepExecutions.IgnoreQueryFilters()
-            .Where(s => cleanup.WorkflowExecutions.IgnoreQueryFilters()
-                .Any(e => e.Id == s.WorkflowExecutionId && e.TenantId == TenantA))
-            .ToListAsync();
-        cleanup.WorkflowStepExecutions.RemoveRange(stepExecs);
-
-        var executions = await cleanup.WorkflowExecutions.IgnoreQueryFilters()
-            .Where(e => e.TenantId == TenantA).ToListAsync();
-        cleanup.WorkflowExecutions.RemoveRange(executions);
-
-        var workflows = await cleanup.Workflows.IgnoreQueryFilters()
-            .Where(w => w.TenantId == TenantA).ToListAsync();
-        var versions = await cleanup.WorkflowVersions.IgnoreQueryFilters()
-            .Where(v => workflows.Select(w => w.Id).Contains(v.WorkflowId)).ToListAsync();
-        var steps = await cleanup.WorkflowSteps.IgnoreQueryFilters()
-            .Where(s => versions.Select(v => v.Id).Contains(s.WorkflowVersionId)).ToListAsync();
-        cleanup.WorkflowSteps.RemoveRange(steps);
-        cleanup.WorkflowVersions.RemoveRange(versions);
-
-        var events = await cleanup.Events.IgnoreQueryFilters()
-            .Where(e => e.TenantId == TenantA).ToListAsync();
-        cleanup.Events.RemoveRange(events);
-        cleanup.Workflows.RemoveRange(workflows);
-
-        var keys = await cleanup.ApiKeys.IgnoreQueryFilters()
-            .Where(k => k.TenantId == TenantA || k.TenantId == TenantB).ToListAsync();
-        cleanup.ApiKeys.RemoveRange(keys);
-
-        var tenants = await cleanup.Tenants.IgnoreQueryFilters()
-            .Where(t => t.Id == TenantA || t.Id == TenantB).ToListAsync();
-        cleanup.Tenants.RemoveRange(tenants);
-
-        await cleanup.SaveChangesAsync();
-    }
-}
-
-internal static class GuidJsonExtensions
-{
-    public static Guid AsGuid(this JsonNode? node) => Guid.Parse((string)node!);
 }

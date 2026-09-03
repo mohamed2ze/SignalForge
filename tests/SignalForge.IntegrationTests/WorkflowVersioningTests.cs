@@ -7,23 +7,19 @@ using SignalForge.Infrastructure.Data;
 namespace SignalForge.IntegrationTests;
 
 [Collection(MsSqlCollection.Name)]
-public class WorkflowVersioningTests
+public class WorkflowVersioningTests : ApiTestBase
 {
     private static readonly Guid TenantId = Guid.NewGuid();
 
-    private readonly MsSqlContainerFixture _database;
-
     public WorkflowVersioningTests(MsSqlContainerFixture database)
+        : base(database)
     {
-        _database = database;
     }
 
     [Fact]
     public async Task CreateVersionAsync_PersistsIncrementedCopy_AsInsertedRow()
     {
-        var options = new DbContextOptionsBuilder<SignalForgeDbContext>()
-            .UseSqlServer(_database.ConnectionString)
-            .Options;
+        var options = DbOptions();
 
         try
         {
@@ -68,15 +64,7 @@ public class WorkflowVersioningTests
         }
         finally
         {
-            using var cleanup = new SignalForgeDbContext(options);
-            var workflows = await cleanup.Workflows.IgnoreQueryFilters()
-                .Where(w => w.TenantId == TenantId)
-                .ToListAsync();
-            cleanup.Workflows.RemoveRange(workflows);
-            var tenant = await cleanup.Tenants.IgnoreQueryFilters().FirstOrDefaultAsync(t => t.Id == TenantId);
-            if (tenant != null)
-                cleanup.Tenants.Remove(tenant);
-            await cleanup.SaveChangesAsync();
+            await CleanupAsync(TenantId);
         }
     }
 }
