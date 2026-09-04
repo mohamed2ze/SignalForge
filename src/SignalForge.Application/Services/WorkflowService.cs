@@ -28,7 +28,7 @@ namespace SignalForge.Application.Services
         public async Task<List<Workflow>> GetWorkflowsAsync(Guid tenantId, CancellationToken cancellationToken = default)
         {
             return await _dbContext.Workflows
-                .Where(w => w.TenantId == tenantId)
+                .Where(w => w.TenantId == tenantId && w.DeletedAt == null)
                 .Include(w => w.Versions)
                 .OrderByDescending(w => w.CreatedAt)
                 .ToListAsync(cancellationToken);
@@ -41,7 +41,7 @@ namespace SignalForge.Application.Services
             CancellationToken cancellationToken = default)
         {
             return await _dbContext.Workflows
-                .Where(w => w.Id == workflowId && w.TenantId == tenantId)
+                .Where(w => w.Id == workflowId && w.TenantId == tenantId && w.DeletedAt == null)
                 .Include(w => w.Versions)
                     .ThenInclude(v => v.Steps)
                 .FirstOrDefaultAsync(cancellationToken);
@@ -89,7 +89,7 @@ namespace SignalForge.Application.Services
         public async Task<bool> DeleteWorkflowAsync(Guid workflowId, Guid tenantId, CancellationToken cancellationToken = default)
         {
             var workflow = await _dbContext.Workflows
-                .FirstOrDefaultAsync(w => w.Id == workflowId && w.TenantId == tenantId, cancellationToken);
+                .FirstOrDefaultAsync(w => w.Id == workflowId && w.TenantId == tenantId && w.DeletedAt == null, cancellationToken);
 
             if (workflow == null)
                 return false;

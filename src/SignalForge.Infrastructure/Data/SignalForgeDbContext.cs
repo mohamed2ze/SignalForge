@@ -37,12 +37,13 @@ public class SignalForgeDbContext : DbContext, ISignalForgeDbContext
         // Apply entity configurations from the Mappings assembly
         modelBuilder.ApplyConfigurationsFromAssembly(typeof(TenantConfiguration).Assembly);
 
-        // Configure global query filters for soft deletes
-        modelBuilder.Entity<Tenant>()
-            .HasQueryFilter(t => t.DeletedAt == null);
-
-        modelBuilder.Entity<Workflow>()
-            .HasQueryFilter(w => w.DeletedAt == null);
+        // Soft delete is NOT enforced by global query filters (Decision #28): a filter on the
+        // required end (Tenant/Workflow) silently drops children through INNER JOINs (EF 10622) —
+        // the executor surfaced that live: a soft-deleted workflow's executions vanished from the
+        // observability list while the count still included them. Deleted-at semantics are applied
+        // explicitly, per-query, where the product requires them (management/execution surfaces),
+        // mirroring Decision #12's explicit-scoping stance. Historical execution/dead-letter data
+        // intentionally survives workflow deletion.
 
         // Configure concurrency tokens (rowversion equivalent using UpdatedAt)
         ConfigureConcurrencyTokens(modelBuilder);

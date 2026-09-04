@@ -48,6 +48,18 @@ public class ApiKeyValidationService : IApiKeyValidationService
             };
         }
 
+        // Deactivated tenants never validate, even with a structurally correct key. Without the
+        // global Tenant soft-delete filter (Decision #28) the Include above would surface the
+        // tenant either way, so the deactivation check is explicit here.
+        if (apiKeyEntity.Tenant is { DeletedAt: not null })
+        {
+            return new ApiKeyValidationResult
+            {
+                IsValid = false,
+                ErrorMessage = "Invalid API key"
+            };
+        }
+
         // Verify the full key hash
         // Delegates to the domain method, which is the single source of truth for key
         // verification (SHA-256 + base64, constant-time compare), consistent with ApiKey.Create.

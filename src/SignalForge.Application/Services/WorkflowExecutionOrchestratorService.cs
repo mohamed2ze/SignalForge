@@ -40,7 +40,7 @@ namespace SignalForge.Application.Services
         {
             // Validate that the workflow exists and belongs to the tenant
             var workflow = await _dbContext.Workflows
-                .FirstOrDefaultAsync(w => w.Id == workflowId && w.TenantId == tenantId, cancellationToken);
+                .FirstOrDefaultAsync(w => w.Id == workflowId && w.TenantId == tenantId && w.DeletedAt == null, cancellationToken);
 
             if (workflow == null)
             {
