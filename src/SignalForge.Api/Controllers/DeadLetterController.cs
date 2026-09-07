@@ -1,8 +1,9 @@
-using System.Globalization;
 using System.Text.Json;
 using Microsoft.AspNetCore.Mvc;
 using SignalForge.Application.Services;
-using SignalForge.Domain.Models;
+
+using SignalForge.Api.Dtos;
+using static SignalForge.Api.Controllers.ApiControllerExtensions;
 
 namespace SignalForge.Api.Controllers;
 
@@ -10,7 +11,7 @@ namespace SignalForge.Api.Controllers;
 /// Controller for managing dead letter messages.
 /// </summary>
 [ApiController]
-[Route("api/[controller]")]
+[Route("api/dead-letters")]
 [Produces("application/json")]
 public class DeadLetterController : ControllerBase
 {
@@ -39,10 +40,10 @@ public class DeadLetterController : ControllerBase
     /// <param name="pageSize">Page size (1..100)</param>
     /// <returns>A paged tile of dead letters</returns>
     [HttpGet]
-    [ProducesResponseType(typeof(PagedDeadLettersResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(PagedDeadLettersDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status401Unauthorized)]
-    public async Task<ActionResult<PagedDeadLettersResponse>> GetDeadLetters(
+    public async Task<ActionResult<PagedDeadLettersDto>> GetDeadLetters(
         [FromQuery] Guid? workflowId,
         [FromQuery] string? cause,
         [FromQuery] bool onlyUnprocessed = false,
@@ -53,8 +54,8 @@ public class DeadLetterController : ControllerBase
     {
         try
         {
-            if (!TryGetTenantId(out var tenantId))
-                return Unauthorized(TenantProblem);
+            if (!this.TryGetTenantId(out var tenantId))
+                return Unauthorized(TenantProblem());
 
             if (!TryParseUtcInstant(from, out var fromUtc) ||
                 !TryParseUtcInstant(to, out var toUtc))
@@ -91,7 +92,7 @@ public class DeadLetterController : ControllerBase
                 });
             }
 
-            return Ok(new PagedDeadLettersResponse
+            return Ok(new PagedDeadLettersDto
             {
                 Items = result.Items.Select(DeadLetterDto.FromDomain).ToList(),
                 Page = result.Page,
@@ -102,12 +103,7 @@ public class DeadLetterController : ControllerBase
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error retrieving dead letters");
-            return StatusCode(StatusCodes.Status500InternalServerError, new ProblemDetails
-            {
-                Title = "Internal server error",
-                Status = StatusCodes.Status500InternalServerError,
-                Detail = "An unexpected error occurred while retrieving dead letters"
-            });
+            return this.InternalServerError("An unexpected error occurred while retrieving dead letters");
         }
     }
 
@@ -130,8 +126,8 @@ public class DeadLetterController : ControllerBase
     {
         try
         {
-            if (!TryGetTenantId(out var tenantId))
-                return Unauthorized(TenantProblem);
+            if (!this.TryGetTenantId(out var tenantId))
+                return Unauthorized(TenantProblem());
 
             var result = await _deadLetterService.ReplayAsync(tenantId, id);
 
@@ -156,12 +152,7 @@ public class DeadLetterController : ControllerBase
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error replaying dead letter {DeadLetterId}", id);
-            return StatusCode(StatusCodes.Status500InternalServerError, new ProblemDetails
-            {
-                Title = "Internal server error",
-                Status = StatusCodes.Status500InternalServerError,
-                Detail = "An unexpected error occurred while replaying the dead letter"
-            });
+            return this.InternalServerError("An unexpected error occurred while replaying the dead letter");
         }
     }
 
@@ -178,8 +169,8 @@ public class DeadLetterController : ControllerBase
     {
         try
         {
-            if (!TryGetTenantId(out var tenantId))
-                return Unauthorized(TenantProblem);
+            if (!this.TryGetTenantId(out var tenantId))
+                return Unauthorized(TenantProblem());
 
             var deadLetter = await _deadLetterService.GetDeadLetterByIdAsync(id, tenantId);
             if (deadLetter == null)
@@ -197,12 +188,7 @@ public class DeadLetterController : ControllerBase
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error retrieving dead letter {DeadLetterId}", id);
-            return StatusCode(StatusCodes.Status500InternalServerError, new ProblemDetails
-            {
-                Title = "Internal server error",
-                Status = StatusCodes.Status500InternalServerError,
-                Detail = "An unexpected error occurred while retrieving the dead letter"
-            });
+            return this.InternalServerError("An unexpected error occurred while retrieving the dead letter");
         }
     }
 
@@ -219,8 +205,8 @@ public class DeadLetterController : ControllerBase
     {
         try
         {
-            if (!TryGetTenantId(out var tenantId))
-                return Unauthorized(TenantProblem);
+            if (!this.TryGetTenantId(out var tenantId))
+                return Unauthorized(TenantProblem());
 
             var result = await _deadLetterService.MarkAsProcessedAsync(id, tenantId);
             if (!result)
@@ -239,12 +225,7 @@ public class DeadLetterController : ControllerBase
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error marking dead letter {DeadLetterId} as processed", id);
-            return StatusCode(StatusCodes.Status500InternalServerError, new ProblemDetails
-            {
-                Title = "Internal server error",
-                Status = StatusCodes.Status500InternalServerError,
-                Detail = "An unexpected error occurred while marking the dead letter as processed"
-            });
+            return this.InternalServerError("An unexpected error occurred while marking the dead letter as processed");
         }
     }
 
@@ -259,8 +240,8 @@ public class DeadLetterController : ControllerBase
     {
         try
         {
-            if (!TryGetTenantId(out var tenantId))
-                return Unauthorized(TenantProblem);
+            if (!this.TryGetTenantId(out var tenantId))
+                return Unauthorized(TenantProblem());
 
             var counts = await _deadLetterService.GetDeadLetterCountsAsync(tenantId);
             return Ok(new DeadLetterCountsDto
@@ -273,119 +254,7 @@ public class DeadLetterController : ControllerBase
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error retrieving dead letter counts");
-            return StatusCode(StatusCodes.Status500InternalServerError, new ProblemDetails
-            {
-                Title = "Internal server error",
-                Status = StatusCodes.Status500InternalServerError,
-                Detail = "An unexpected error occurred while retrieving dead letter counts"
-            });
+            return this.InternalServerError("An unexpected error occurred while retrieving dead letter counts");
         }
     }
-
-    private bool TryGetTenantId(out Guid tenantId)
-    {
-        var tenantIdClaim = User.FindFirst("tenant_id");
-        if (tenantIdClaim == null || !Guid.TryParse(tenantIdClaim.Value, out tenantId))
-        {
-            tenantId = Guid.Empty;
-            return false;
-        }
-        return true;
-    }
-
-    private ProblemDetails TenantProblem => new ProblemDetails
-    {
-        Title = "Invalid tenant information",
-        Status = StatusCodes.Status401Unauthorized,
-        Detail = "Unable to determine tenant from authentication token"
-    };
-
-    // from/to are optional ISO 8601 instants; null means "no bound". Invalid non-null values
-    // parse to false so the caller can reject the request.
-    private static bool TryParseUtcInstant(string? value, out DateTime? utc)
-    {
-        utc = null;
-        if (value == null)
-            return true;
-
-        if (DateTimeOffset.TryParse(
-                value,
-                CultureInfo.InvariantCulture,
-                DateTimeStyles.AllowWhiteSpaces | DateTimeStyles.AssumeUniversal,
-                out var parsed))
-        {
-            utc = parsed.UtcDateTime;
-            return true;
-        }
-
-        return false;
-    }
-}
-
-/// <summary>
-/// Response model for dead letter message data.
-/// </summary>
-public class DeadLetterDto
-{
-    public Guid Id { get; set; }
-    public Guid TenantId { get; set; }
-    public string OriginalMessageType { get; set; } = default!;
-    public string OriginalPayload { get; set; } = default!;
-    public string FailedStepType { get; set; } = default!;
-    public int FailedStepNumber { get; set; }
-    public Guid? WorkflowExecutionId { get; set; }
-    public Guid? WorkflowStepExecutionId { get; set; }
-    public string ErrorMessage { get; set; } = default!;
-    public int FinalAttemptCount { get; set; }
-    public DateTime CreatedAt { get; set; }
-    public DateTime? ProcessedAt { get; set; }
-    public bool IsProcessed { get; set; }
-    public int ReplayCount { get; set; }
-    public DateTime? LastReplayedAt { get; set; }
-    public Guid? ReplayedFromDeadLetterId { get; set; }
-
-    public static DeadLetterDto FromDomain(DeadLetterMessage deadLetter)
-    {
-        return new DeadLetterDto
-        {
-            Id = deadLetter.Id,
-            TenantId = deadLetter.TenantId,
-            OriginalMessageType = deadLetter.OriginalMessageType,
-            OriginalPayload = deadLetter.OriginalPayload,
-            FailedStepType = deadLetter.FailedStepType,
-            FailedStepNumber = deadLetter.FailedStepNumber,
-            WorkflowExecutionId = deadLetter.WorkflowExecutionId,
-            WorkflowStepExecutionId = deadLetter.WorkflowStepExecutionId,
-            ErrorMessage = deadLetter.ErrorMessage,
-            FinalAttemptCount = deadLetter.FinalAttemptCount,
-            CreatedAt = deadLetter.CreatedAt,
-            ProcessedAt = deadLetter.ProcessedAt,
-            IsProcessed = deadLetter.IsProcessed,
-            ReplayCount = deadLetter.ReplayCount,
-            LastReplayedAt = deadLetter.LastReplayedAt,
-            ReplayedFromDeadLetterId = deadLetter.ReplayedFromDeadLetterId
-        };
-    }
-}
-
-/// <summary>
-/// Paged envelope for the Level 5 dead-letter list (Decision #25): items plus the applied
-/// page/pageSize and the exact total matching the filters so clients can page without guessing.
-/// </summary>
-public class PagedDeadLettersResponse
-{
-    public List<DeadLetterDto> Items { get; set; } = new();
-    public int Page { get; set; }
-    public int PageSize { get; set; }
-    public int TotalCount { get; set; }
-}
-
-/// <summary>
-/// Response model for dead letter counts.
-/// </summary>
-public class DeadLetterCountsDto
-{
-    public int Total { get; set; }
-    public int Unprocessed { get; set; }
-    public int Processed { get; set; }
 }

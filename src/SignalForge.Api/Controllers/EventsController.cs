@@ -1,8 +1,9 @@
 using System.Text.Json;
 using Microsoft.AspNetCore.Mvc;
 using SignalForge.Application.Services;
-using SignalForge.Domain.Models;
-using SignalForge.Domain.ValueObjects;
+
+using SignalForge.Api.Dtos;
+using static SignalForge.Api.Controllers.ApiControllerExtensions;
 
 namespace SignalForge.Api.Controllers;
 
@@ -10,7 +11,7 @@ namespace SignalForge.Api.Controllers;
 /// Controller for ingesting events with idempotency support.
 /// </summary>
 [ApiController]
-[Route("api/[controller]")]
+[Route("api/events")]
 [Produces("application/json")]
 public class EventsController : ControllerBase
 {
@@ -40,17 +41,9 @@ public class EventsController : ControllerBase
     {
         try
         {
-            // Get tenant ID from authenticated user
-            var tenantIdClaim = User.FindFirst("tenant_id");
-            if (tenantIdClaim == null || !Guid.TryParse(tenantIdClaim.Value, out var tenantId))
-            {
-                return Unauthorized(new ProblemDetails
-                {
-                    Title = "Invalid tenant information",
-                    Status = StatusCodes.Status401Unauthorized,
-                    Detail = "Unable to determine tenant from authentication token"
-                });
-            }
+            // Resolve and validate tenant from the authenticated user
+            if (!this.TryGetTenantId(out var tenantId))
+                return Unauthorized(TenantProblem());
 
             // Validate request
             if (string.IsNullOrWhiteSpace(request.ExternalEventId))
@@ -108,12 +101,7 @@ public class EventsController : ControllerBase
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error ingesting event");
-            return StatusCode(StatusCodes.Status500InternalServerError, new ProblemDetails
-            {
-                Title = "Internal server error",
-                Status = StatusCodes.Status500InternalServerError,
-                Detail = "An unexpected error occurred while ingesting the event"
-            });
+            return this.InternalServerError("An unexpected error occurred while ingesting the event");
         }
     }
 
@@ -130,17 +118,9 @@ public class EventsController : ControllerBase
     {
         try
         {
-            // Get tenant ID from authenticated user
-            var tenantIdClaim = User.FindFirst("tenant_id");
-            if (tenantIdClaim == null || !Guid.TryParse(tenantIdClaim.Value, out var tenantId))
-            {
-                return Unauthorized(new ProblemDetails
-                {
-                    Title = "Invalid tenant information",
-                    Status = StatusCodes.Status401Unauthorized,
-                    Detail = "Unable to determine tenant from authentication token"
-                });
-            }
+            // Resolve and validate tenant from the authenticated user
+            if (!this.TryGetTenantId(out var tenantId))
+                return Unauthorized(TenantProblem());
 
             var eventEntity = await _eventIngestionService.GetEventByIdAsync(id, tenantId);
             if (eventEntity == null)
@@ -158,70 +138,7 @@ public class EventsController : ControllerBase
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error retrieving event {EventId}", id);
-            return StatusCode(StatusCodes.Status500InternalServerError, new ProblemDetails
-            {
-                Title = "Internal server error",
-                Status = StatusCodes.Status500InternalServerError,
-                Detail = "An unexpected error occurred while retrieving the event"
-            });
+            return this.InternalServerError("An unexpected error occurred while retrieving the event");
         }
-    }
-}
-
-/// <summary>
-/// Request model for ingesting an event.
-/// </summary>
-public class IngestEventRequest
-{
-    /// <summary>
-    /// The external event ID (idempotency key) from the sending system.
-    /// </summary>
-    public string ExternalEventId { get; set; } = default!;
-
-    /// <summary>
-    /// The type of event (e.g., "order.created", "payment.received").
-    /// </summary>
-    public string EventType { get; set; } = default!;
-
-    /// <summary>
-    /// When the event actually occurred (defaults to now if not provided).
-    /// </summary>
-    public DateTime? OccurredAt { get; set; }
-
-    /// <summary>
-    /// The event payload as a JSON string.
-    /// </summary>
-    public string Payload { get; set; } = default!;
-}
-
-/// <summary>
-/// Response model for event data.
-/// </summary>
-public class EventDto
-{
-    public Guid Id { get; set; }
-    public Guid TenantId { get; set; }
-    public string ExternalEventId { get; set; } = default!;
-    public string EventType { get; set; } = default!;
-    public DateTime OccurredAt { get; set; }
-    public DateTime ReceivedAt { get; set; }
-    public DateTime? ProcessedAt { get; set; }
-    public bool IsProcessed { get; set; }
-    public string Payload { get; set; } = default!;
-
-    public static EventDto FromDomain(Event @event)
-    {
-        return new EventDto
-        {
-            Id = @event.Id,
-            TenantId = @event.TenantId,
-            ExternalEventId = @event.ExternalEventId,
-            EventType = @event.EventType,
-            OccurredAt = @event.OccurredAt,
-            ReceivedAt = @event.ReceivedAt,
-            ProcessedAt = @event.ProcessedAt,
-            IsProcessed = @event.IsProcessed,
-            Payload = @event.Payload
-        };
     }
 }

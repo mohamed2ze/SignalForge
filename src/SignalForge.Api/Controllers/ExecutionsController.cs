@@ -1,7 +1,8 @@
-using System.Globalization;
 using Microsoft.AspNetCore.Mvc;
 using SignalForge.Application.Services;
 using SignalForge.Domain.Models;
+
+using static SignalForge.Api.Controllers.ApiControllerExtensions;
 
 namespace SignalForge.Api.Controllers;
 
@@ -12,7 +13,7 @@ namespace SignalForge.Api.Controllers;
 /// GET-only; the signing surface (POST /api/events) is unaffected by this controller.
 /// </summary>
 [ApiController]
-[Route("api/[controller]")]
+[Route("api/executions")]
 public sealed class ExecutionsController : ControllerBase
 {
     private static readonly string[] AllowedStatuses =
@@ -57,7 +58,7 @@ public sealed class ExecutionsController : ControllerBase
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 20)
     {
-        if (!TryGetTenantId(out var tenantId))
+        if (!this.TryGetTenantId(out var tenantId))
             return Unauthorized();
 
         var normalizedStatus = status?.Trim();
@@ -97,7 +98,7 @@ public sealed class ExecutionsController : ControllerBase
         [FromQuery] string? from,
         [FromQuery] string? to)
     {
-        if (!TryGetTenantId(out var tenantId))
+        if (!this.TryGetTenantId(out var tenantId))
             return Unauthorized();
 
         if (!TryParseWindow(from, to, out var fromUtc, out var toUtc))
@@ -110,58 +111,5 @@ public sealed class ExecutionsController : ControllerBase
 
         var filter = new AggregateQueryFilter(workflowId, fromUtc, toUtc);
         return Ok(await _observability.GetAggregatesAsync(tenantId, filter, HttpContext.RequestAborted));
-    }
-
-    private bool TryGetTenantId(out Guid tenantId)
-    {
-        var tenantIdClaim = User.FindFirst("tenant_id");
-        if (tenantIdClaim == null || !Guid.TryParse(tenantIdClaim.Value, out tenantId))
-        {
-            tenantId = Guid.Empty;
-            return false;
-        }
-        return true;
-    }
-
-    private static bool TryParseWindow(
-        string? from,
-        string? to,
-        out DateTime? fromUtc,
-        out DateTime? toUtc)
-    {
-        fromUtc = null;
-        toUtc = null;
-
-        if (from != null)
-        {
-            if (!TryParseUtcInstant(from, out var parsedFrom))
-                return false;
-            fromUtc = parsedFrom;
-        }
-
-        if (to != null)
-        {
-            if (!TryParseUtcInstant(to, out var parsedTo))
-                return false;
-            toUtc = parsedTo;
-        }
-
-        return true;
-    }
-
-    private static bool TryParseUtcInstant(string value, out DateTime utc)
-    {
-        if (DateTimeOffset.TryParse(
-                value,
-                CultureInfo.InvariantCulture,
-                DateTimeStyles.AllowWhiteSpaces | DateTimeStyles.AssumeUniversal,
-                out var parsed))
-        {
-            utc = parsed.UtcDateTime;
-            return true;
-        }
-
-        utc = default;
-        return false;
     }
 }
