@@ -218,9 +218,3 @@ catch (Exception ex)
 }
 
 app.Run();
-
-// Exposed so the integration test host (WebApplicationFactory<Program>) can reference the
-// top-level-statement entry point.
-public partial class Program
-{
-}

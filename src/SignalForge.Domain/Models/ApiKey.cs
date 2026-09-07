@@ -54,9 +54,8 @@ public class ApiKey
             throw new ArgumentException("API key cannot be empty", nameof(plainTextKey));
 
         // Hash the API key for storage
-        using var sha256 = SHA256.Create();
         var keyBytes = Encoding.UTF8.GetBytes(plainTextKey);
-        var hashBytes = sha256.ComputeHash(keyBytes);
+        var hashBytes = SHA256.HashData(keyBytes);
         var keyHash = Convert.ToBase64String(hashBytes);
 
         // Extract prefix for identification (first 8 characters)
@@ -80,9 +79,8 @@ public class ApiKey
         if (string.IsNullOrWhiteSpace(plainTextKey))
             return false;
 
-        using var sha256 = SHA256.Create();
         var keyBytes = Encoding.UTF8.GetBytes(plainTextKey);
-        var hashBytes = sha256.ComputeHash(keyBytes);
+        var hashBytes = SHA256.HashData(keyBytes);
         var computedHash = Convert.ToBase64String(hashBytes);
 
         return CryptographicOperations.FixedTimeEquals(
