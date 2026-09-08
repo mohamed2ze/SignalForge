@@ -123,14 +123,14 @@ public sealed class SoftDeleteQueryFilterTests : ApiTestBase
 
             // workflowId provenance is resolved via the execution's FK column, not a Workflows
             // join, so a deleted workflow must not truncate the incident history.
-            var byWorkflow = await client.GetAsync($"/{ApiRoute}/deadLetter?workflowId={workflowId}");
+            var byWorkflow = await client.GetAsync($"/{ApiDeadLetterRoute}?workflowId={workflowId}");
             Assert.Equal(HttpStatusCode.OK, byWorkflow.StatusCode);
             var byWorkflowObj = JsonNode.Parse(await byWorkflow.Content.ReadAsStringAsync())!.AsObject();
             Assert.Equal(1, (int)byWorkflowObj["totalCount"]!);
             Assert.Contains(byWorkflowObj["items"]!.AsArray(),
                 dl => dl!["id"]!.AsGuid() == deadLetterId);
 
-            var detail = await client.GetAsync($"/{ApiRoute}/deadLetter/{deadLetterId}");
+            var detail = await client.GetAsync($"/{ApiDeadLetterRoute}/{deadLetterId}");
             Assert.Equal(HttpStatusCode.OK, detail.StatusCode);
         }
         finally
@@ -156,14 +156,14 @@ public sealed class SoftDeleteQueryFilterTests : ApiTestBase
 
     // ---------- helpers ----------
 
-    private async Task SeedTenantsAsync(SignalForgeDbContext ctx)
+    private static async Task SeedTenantsAsync(SignalForgeDbContext ctx)
     {
         // Idempotent against leftovers in the shared container DB (the suite's established pattern).
         await EnsureTenantAsync(ctx, TenantA, "itest-sd-tenant-a", KeyA);
         await EnsureTenantAsync(ctx, TenantB, "itest-sd-tenant-b", KeyB);
     }
 
-    private async Task<(int TotalCount, List<JsonObject> Items)> GetExecutionsAsync(
+    private static async Task<(int TotalCount, List<JsonObject> Items)> GetExecutionsAsync(
         HttpClient client, Guid workflowId)
     {
         var response = await client.GetAsync($"/{ApiRoute}/executions?workflowId={workflowId}");

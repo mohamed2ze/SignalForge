@@ -355,7 +355,7 @@ public sealed class ApiIntegrationTests : ApiTestBase
         var deadLetterId = await SeedDeadLetterAsync();
 
         // List (Level 5 paged envelope)
-        var list = await client.GetAsync($"/{ApiRoute}/deadLetter");
+        var list = await client.GetAsync($"/{ApiDeadLetterRoute}");
         Assert.Equal(HttpStatusCode.OK, list.StatusCode);
         var listObj = JsonNode.Parse(await list.Content.ReadAsStringAsync())!.AsObject();
         var listArr = listObj["items"]!.AsArray();
@@ -363,38 +363,38 @@ public sealed class ApiIntegrationTests : ApiTestBase
         Assert.Contains(listArr, dl => Guid.Parse((string)dl!["id"]!) == deadLetterId);
 
         // Detail
-        var detail = await client.GetAsync($"/{ApiRoute}/deadLetter/{deadLetterId}");
+        var detail = await client.GetAsync($"/{ApiDeadLetterRoute}/{deadLetterId}");
         Assert.Equal(HttpStatusCode.OK, detail.StatusCode);
         var detailObj = JsonNode.Parse(await detail.Content.ReadAsStringAsync())!.AsObject();
         Assert.False((bool)detailObj["isProcessed"]!);
         Assert.Equal("Test/Fail", (string)detailObj["originalMessageType"]!);
 
         // Counts before processing
-        var countsBefore = await client.GetAsync($"/{ApiRoute}/deadLetter/counts");
+        var countsBefore = await client.GetAsync($"/{ApiDeadLetterRoute}/counts");
         Assert.Equal(HttpStatusCode.OK, countsBefore.StatusCode);
         var countsBeforeObj = JsonNode.Parse(await countsBefore.Content.ReadAsStringAsync())!.AsObject();
         Assert.True((int)countsBeforeObj["unprocessed"]! >= 1);
 
         // Mark processed
-        var process = await client.PostAsync($"/{ApiRoute}/deadLetter/{deadLetterId}/process", null);
+        var process = await client.PostAsync($"/{ApiDeadLetterRoute}/{deadLetterId}/process", null);
         Assert.Equal(HttpStatusCode.OK, process.StatusCode);
         Assert.True(bool.Parse(await process.Content.ReadAsStringAsync()));
 
         // Excluded from the unprocessed-only list, reflected in counts.
-        var unprocessedOnly = await client.GetAsync($"/{ApiRoute}/deadLetter?onlyUnprocessed=true");
+        var unprocessedOnly = await client.GetAsync($"/{ApiDeadLetterRoute}?onlyUnprocessed=true");
         var unprocessedObj = JsonNode.Parse(await unprocessedOnly.Content.ReadAsStringAsync())!.AsObject();
         var unprocessedArr = unprocessedObj["items"]!.AsArray();
         Assert.DoesNotContain(unprocessedArr, dl => Guid.Parse((string)dl!["id"]!) == deadLetterId);
 
-        var countsAfter = await client.GetAsync($"/{ApiRoute}/deadLetter/counts");
+        var countsAfter = await client.GetAsync($"/{ApiDeadLetterRoute}/counts");
         var countsAfterObj = JsonNode.Parse(await countsAfter.Content.ReadAsStringAsync())!.AsObject();
         Assert.True((int)countsAfterObj["processed"]! >= 1);
 
         // Cross-tenant isolation: tenant B cannot see or process A's dead letter.
         var clientB = Factory.CreateClient(KeyB);
-        var crossRead = await clientB.GetAsync($"/{ApiRoute}/deadLetter/{deadLetterId}");
+        var crossRead = await clientB.GetAsync($"/{ApiDeadLetterRoute}/{deadLetterId}");
         Assert.Equal(HttpStatusCode.NotFound, crossRead.StatusCode);
-        var crossProcess = await clientB.PostAsync($"/{ApiRoute}/deadLetter/{deadLetterId}/process", null);
+        var crossProcess = await clientB.PostAsync($"/{ApiDeadLetterRoute}/{deadLetterId}/process", null);
         Assert.Equal(HttpStatusCode.NotFound, crossProcess.StatusCode);
     }
 
@@ -403,7 +403,7 @@ public sealed class ApiIntegrationTests : ApiTestBase
     {
         var anonymous = Factory.CreateClient();
 
-        var counts = await anonymous.GetAsync($"/{ApiRoute}/deadLetter/counts");
+        var counts = await anonymous.GetAsync($"/{ApiDeadLetterRoute}/counts");
         Assert.Equal(HttpStatusCode.Unauthorized, counts.StatusCode);
     }
 

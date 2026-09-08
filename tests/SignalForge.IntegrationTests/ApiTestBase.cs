@@ -19,6 +19,7 @@ namespace SignalForge.IntegrationTests;
 public abstract class ApiTestBase : IDisposable
 {
     protected const string ApiRoute = "api";
+    protected const string ApiDeadLetterRoute = "api/dead-letters";
 
     protected readonly MsSqlContainerFixture Database;
     protected readonly ApiTestFactory Factory;
@@ -29,7 +30,11 @@ public abstract class ApiTestBase : IDisposable
         Factory = new ApiTestFactory(database);
     }
 
-    public void Dispose() => Factory.Dispose();
+    public void Dispose()
+    {
+        GC.SuppressFinalize(this);
+        Factory.Dispose();
+    }
 
     protected DbContextOptions<SignalForgeDbContext> DbOptions()
         => new DbContextOptionsBuilder<SignalForgeDbContext>()
@@ -174,14 +179,14 @@ public abstract class ApiTestBase : IDisposable
 
     // ---------- HTTP workflow-surface helpers ----------
 
-    protected async Task<Guid> CreateWorkflowAsync(HttpClient client, string name)
+    protected static async Task<Guid> CreateWorkflowAsync(HttpClient client, string name)
     {
         var response = await client.PostAsJsonAsync($"/{ApiRoute}/workflows", new { Name = name });
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
         return Guid.Parse((string)JsonNode.Parse(await response.Content.ReadAsStringAsync())!["id"]!);
     }
 
-    protected async Task<Guid> CreateVersionAsync(HttpClient client, Guid workflowId)
+    protected static async Task<Guid> CreateVersionAsync(HttpClient client, Guid workflowId)
     {
         var response = await client.PostAsJsonAsync(
             $"/{ApiRoute}/workflows/{workflowId}/versions", new { Description = "v-next" });
@@ -189,7 +194,7 @@ public abstract class ApiTestBase : IDisposable
         return Guid.Parse((string)JsonNode.Parse(await response.Content.ReadAsStringAsync())!["id"]!);
     }
 
-    protected async Task<bool> WorkflowEnabledAsync(HttpClient client, Guid workflowId, bool expectedEnabled)
+    protected static async Task<bool> WorkflowEnabledAsync(HttpClient client, Guid workflowId, bool expectedEnabled)
     {
         var response = await client.GetAsync($"/{ApiRoute}/workflows/{workflowId}");
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);

@@ -46,52 +46,52 @@ public sealed class DeadLetterReplayTests : ApiTestBase
         try
         {
             // All 3 dead letters, newest first (out2 = -1min, out1 = -5min, step = -10min).
-            var all = await GetPagedAsync(client, "/api/deadLetter");
+            var all = await GetPagedAsync(client, $"/{ApiDeadLetterRoute}");
             Assert.Equal(3, all.TotalCount);
             Assert.Equal(new[] { out2, out1, stepDeadLetter }, all.Items.Select(d => d["id"]!.AsGuid()));
             Assert.Equal(1, all.Page);
             Assert.Equal(20, all.PageSize);
 
             // Page 1 size 1: only the newest is returned.
-            var page1 = await GetPagedAsync(client, "/api/deadLetter?page=1&pageSize=1");
+            var page1 = await GetPagedAsync(client, $"/{ApiDeadLetterRoute}?page=1&pageSize=1");
             Assert.Equal(3, page1.TotalCount);
             Assert.Single(page1.Items);
             Assert.Equal(out2, page1.Items[0]["id"]!.AsGuid());
 
             // WorkflowId filter (step-provenance join): only the step-originated dead letter.
-            var byWf = await GetPagedAsync(client, $"/api/deadLetter?workflowId={workflowId}");
+            var byWf = await GetPagedAsync(client, $"/{ApiDeadLetterRoute}?workflowId={workflowId}");
             Assert.Equal(1, byWf.TotalCount);
             Assert.Equal(stepDeadLetter, byWf.Items[0]["id"]!.AsGuid());
 
             // Cause substring: only outbox-originated ("simulated failure").
-            var byCause = await GetPagedAsync(client, $"/api/deadLetter?cause={Uri.EscapeDataString("simulated")}");
+            var byCause = await GetPagedAsync(client, $"/{ApiDeadLetterRoute}?cause={Uri.EscapeDataString("simulated")}");
             Assert.Equal(2, byCause.TotalCount);
             Assert.Contains(out1, byCause.Items.Select(d => d["id"]!.AsGuid()));
 
             // onlyUnprocessed excludes the processed one.
-            var unprocessed = await GetPagedAsync(client, "/api/deadLetter?onlyUnprocessed=true");
+            var unprocessed = await GetPagedAsync(client, $"/{ApiDeadLetterRoute}?onlyUnprocessed=true");
             Assert.Equal(2, unprocessed.TotalCount);
             Assert.DoesNotContain(out1, unprocessed.Items.Select(d => d["id"]!.AsGuid()));
 
             // Time window: from = -2min => only out2 (CreatedAt -1min).
             var fromWindow = await GetPagedAsync(client,
-                $"/api/deadLetter?from={Uri.EscapeDataString(seedUtc.AddMinutes(-2).ToString("o"))}");
+                $"/{ApiDeadLetterRoute}?from={Uri.EscapeDataString(seedUtc.AddMinutes(-2).ToString("o"))}");
             Assert.Equal(1, fromWindow.TotalCount);
             Assert.Equal(out2, fromWindow.Items[0]["id"]!.AsGuid());
 
             // Time window: to = older than everything => empty.
             var toWindow = await GetPagedAsync(client,
-                $"/api/deadLetter?to={Uri.EscapeDataString(seedUtc.AddMinutes(-30).ToString("o"))}");
+                $"/{ApiDeadLetterRoute}?to={Uri.EscapeDataString(seedUtc.AddMinutes(-30).ToString("o"))}");
             Assert.Equal(0, toWindow.TotalCount);
             Assert.Empty(toWindow.Items);
 
             // Gas-bad window values are rejected with 400.
-            var badWindow = await client.GetAsync($"/api/deadLetter?from=not-a-date");
+            var badWindow = await client.GetAsync($"/{ApiDeadLetterRoute}?from=not-a-date");
             Assert.Equal(HttpStatusCode.BadRequest, badWindow.StatusCode);
 
             // Cross-tenant: nothing leaks to tenant B, and B can replay nothing of A's.
             var clientB = Factory.CreateClient(KeyB);
-            var bList = await GetPagedAsync(clientB, "/api/deadLetter");
+            var bList = await GetPagedAsync(clientB, $"/{ApiDeadLetterRoute}");
             Assert.Equal(0, bList.TotalCount);
             Assert.Empty(bList.Items);
         }
@@ -112,7 +112,7 @@ public sealed class DeadLetterReplayTests : ApiTestBase
         try
         {
             // First replay: 200, requeue created + replay recorded.
-            var replayed = await client.PostAsync($"/api/deadLetter/{deadLetterId}/replay", null);
+            var replayed = await client.PostAsync($"/{ApiDeadLetterRoute}/{deadLetterId}/replay", null);
             Assert.Equal(HttpStatusCode.OK, replayed.StatusCode);
             var replayBody = JsonNode.Parse(await replayed.Content.ReadAsStringAsync())!.AsObject();
             Assert.Equal(deadLetterId, replayBody["id"]!.AsGuid());
@@ -132,7 +132,7 @@ public sealed class DeadLetterReplayTests : ApiTestBase
             }
 
             // Second replay while the requeue is still in flight: 409, no duplicate requeue.
-            var inFlight = await client.PostAsync($"/api/deadLetter/{deadLetterId}/replay", null);
+            var inFlight = await client.PostAsync($"/{ApiDeadLetterRoute}/{deadLetterId}/replay", null);
             Assert.Equal(HttpStatusCode.Conflict, inFlight.StatusCode);
 
             using (var verify = new SignalForgeDbContext(DbOptions()))
@@ -147,9 +147,9 @@ public sealed class DeadLetterReplayTests : ApiTestBase
 
             // Cross-tenant replay of A's dead letter: 404, and B sees no dead letters.
             var clientB = Factory.CreateClient(KeyB);
-            var cross = await clientB.PostAsync($"/api/deadLetter/{deadLetterId}/replay", null);
+            var cross = await clientB.PostAsync($"/{ApiDeadLetterRoute}/{deadLetterId}/replay", null);
             Assert.Equal(HttpStatusCode.NotFound, cross.StatusCode);
-            var bList = await GetPagedAsync(clientB, "/api/deadLetter");
+            var bList = await GetPagedAsync(clientB, $"/{ApiDeadLetterRoute}");
             Assert.Equal(0, bList.TotalCount);
         }
         finally
@@ -168,7 +168,7 @@ public sealed class DeadLetterReplayTests : ApiTestBase
 
         try
         {
-            var replayed = await client.PostAsync($"/api/deadLetter/{originalId}/replay", null);
+            var replayed = await client.PostAsync($"/{ApiDeadLetterRoute}/{originalId}/replay", null);
             Assert.Equal(HttpStatusCode.OK, replayed.StatusCode);
 
             // Drive the real outbox processor with the Test/Fail seam (throws before publishing):
@@ -206,7 +206,7 @@ public sealed class DeadLetterReplayTests : ApiTestBase
                 Assert.Empty(remaining);
 
                 // Detail reads the full chain: original has no link, the new one points back.
-                var detail = await client.GetAsync($"/api/deadLetter/{newDl.Id}");
+                var detail = await client.GetAsync($"/{ApiDeadLetterRoute}/{newDl.Id}");
                 Assert.Equal(HttpStatusCode.OK, detail.StatusCode);
                 var detailBody = JsonNode.Parse(await detail.Content.ReadAsStringAsync())!.AsObject();
                 Assert.Equal(originalId, detailBody["replayedFromDeadLetterId"]!.AsGuid());
@@ -214,7 +214,7 @@ public sealed class DeadLetterReplayTests : ApiTestBase
 
             // In-flight cleared once the requeue was exhausted: replay works again (and bumps
             // ReplayCount to 2 on the original).
-            var second = await client.PostAsync($"/api/deadLetter/{originalId}/replay", null);
+            var second = await client.PostAsync($"/{ApiDeadLetterRoute}/{originalId}/replay", null);
             Assert.Equal(HttpStatusCode.OK, second.StatusCode);
             var secondBody = JsonNode.Parse(await second.Content.ReadAsStringAsync())!.AsObject();
             Assert.Equal(2, (int)secondBody["replayCount"]!);
@@ -234,7 +234,7 @@ public sealed class DeadLetterReplayTests : ApiTestBase
         await EnsureTenantAsync(ctx, TenantB, "itest-dl-tenant-b", KeyB);
     }
 
-    private async Task<(Guid oldProcessed, Guid unprocessed)> SeedOutboxDeadLettersAsync(
+    private static async Task<(Guid oldProcessed, Guid unprocessed)> SeedOutboxDeadLettersAsync(
         SignalForgeDbContext ctx, DateTime seedUtc)
     {
         // Oldest: already processed (excluded by onlyUnprocessed, still in all).
