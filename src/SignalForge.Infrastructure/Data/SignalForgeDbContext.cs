@@ -49,7 +49,7 @@ public class SignalForgeDbContext : DbContext, ISignalForgeDbContext
         ConfigureConcurrencyTokens(modelBuilder);
     }
 
-    private void ConfigureConcurrencyTokens(ModelBuilder modelBuilder)
+    private static void ConfigureConcurrencyTokens(ModelBuilder modelBuilder)
     {
         // UpdatedAt doubles as an optimistic-concurrency token (rowversion-like behavior).
         // The value is ALWAYS set client-side by the domain (constructors/update methods), so it

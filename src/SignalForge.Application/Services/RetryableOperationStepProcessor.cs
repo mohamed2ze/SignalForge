@@ -69,7 +69,7 @@ namespace SignalForge.Application.Services
             }
         }
 
-        private async Task<bool> SimulateOperationAsync(string operationType, string parametersJson, CancellationToken cancellationToken)
+        private static async Task<bool> SimulateOperationAsync(string operationType, string parametersJson, CancellationToken cancellationToken)
         {
             // Simulate operation processing time
             await Task.Delay(200, cancellationToken);

@@ -14,3 +14,19 @@ csharp_style_namespace_declarations = file_scoped:suggestion
 csharp_style_var_for_built_in_types = false:suggestion
 csharp_style_var_when_type_is_apparent = false:suggestion
 csharp_new_line_before_open_brace = all
+
+# Analyzer disposition (Decision #31): fix CA1873 + trivial CA1822/CA1816, suppress everything else.
+# CA1873: all logging is already structured (template + args). The rule flags canonical structured
+# calls with `params object?[]` and ships no code fix, so there is nothing to change in the code.
+dotnet_diagnostic.CA1873.severity = none
+# CA1859: return-type refinement (interface agreements, expression-evaluator tree, test factories).
+# Declined — micro-optimization with no measurable win for the mocked/test surfaces it would touch.
+dotnet_diagnostic.CA1859.severity = none
+# xUnit2024/xUnit2025: micro assertion-style hints. Intentional — the tests assert exactly what the
+# scenario describes; rewriting them would add noise, not clarity.
+dotnet_diagnostic.xUnit2024.severity = none
+dotnet_diagnostic.xUnit2025.severity = none
+
+# Generated migrations are EF history: never hand-edit (CA1861 flag is on generated index code).
+[src/SignalForge.Infrastructure/Migrations/*.cs]
+dotnet_diagnostic.CA1861.severity = none
