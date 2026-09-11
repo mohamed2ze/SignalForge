@@ -139,7 +139,7 @@ public class ConditionExpressionEvaluatorTests
         Assert.False(ConditionExpressionEvaluator.Evaluate("not true", null).Value);
     }
 
-    // ---------- resource guards (Decision #26) ----------
+    // ---------- resource guards ----------
 
     [Fact]
     public void Overlong_expression_fails_fast_with_error()

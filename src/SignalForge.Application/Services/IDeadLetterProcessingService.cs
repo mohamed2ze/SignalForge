@@ -61,7 +61,7 @@ public interface IDeadLetterProcessingService
         CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Gets dead letter messages for a tenant with the Level 5 filter/paging contract: optional
+    /// Gets dead letter messages for a tenant with the filter/paging contract: optional
     /// workflow id (joins via the step-execution provenance), cause substring on the final error
     /// message, processed-state flag, and a CreatedAt time window. Always resolved with an exact
     /// total count, 1-based paging, and a deterministic order (CreatedAt desc, Id desc).
@@ -76,7 +76,7 @@ public interface IDeadLetterProcessingService
         CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Replays a dead letter (Decision #25): requeues a fresh outbox message with the same
+    /// Replays a dead letter: requeues a fresh outbox message with the same
     /// tenant/type/payload and records the replay on the dead letter. At most one in-flight requeue
     /// per dead letter — a second replay while the requeue is still unprocessed returns
     /// <see cref="DeadLetterReplayStatus.AlreadyInFlight"/> without creating a duplicate. The dead
@@ -104,7 +104,7 @@ public class DeadLetterCounts
 }
 
 /// <summary>
-/// Filter + paging contract for the Level 5 dead-letter list. All values optional except the
+/// Filter + paging contract for the dead-letter list. All values optional except the
 /// tenant, which is applied separately; windows compare against <c>CreatedAt</c>.
 /// </summary>
 public sealed record DeadLetterQueryFilter(

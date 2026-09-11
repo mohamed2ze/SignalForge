@@ -10,7 +10,7 @@ using SignalForge.Domain.Models;
 namespace SignalForge.Application.Services;
 
 /// <summary>
-/// Tenant-scoped execution observability queries (Decision #24). Windows are applied server-side
+/// Tenant-scoped execution observability queries. Windows are applied server-side
 /// against the execution <see cref="WorkflowExecution.StartedAt"/>; step latency/failure details
 /// are projected to scalar tuples in SQL and aggregated post-projection, which keeps the queries
 /// portable across EF providers while still returning fully aggregated dashboard contracts.

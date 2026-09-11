@@ -14,11 +14,11 @@ public class OutboxMessage
     public DateTime CreatedAt { get; private set; }
     public DateTime? ProcessedAt { get; private set; }
     public DateTime? FailedAt { get; private set; }
-    public DateTime? NextRetryAt { get; private set; } // Per-message retry gate: not re-polled before this time (Decision #26)
+    public DateTime? NextRetryAt { get; private set; } // Per-message retry gate: not re-polled before this time
     public int AttemptCount { get; private set; }
     public string? ErrorMessage { get; private set; }
     public bool IsProcessed { get; private set; }
-    public Guid? ReplaySourceDeadLetterId { get; private set; } // Set when a dead letter is replayed (Decision #25): the dead letter that produced this requeue
+    public Guid? ReplaySourceDeadLetterId { get; private set; } // The dead letter that produced this requeue, set when a dead letter is replayed
 
     private OutboxMessage() { } // For EF Core
 
@@ -56,7 +56,7 @@ public class OutboxMessage
     }
 
     /// <summary>
-    /// Creates a new outbox message as a requeue of a dead letter (Decision #25): same
+    /// Creates a new outbox message as a requeue of a dead letter: same
     /// tenant/type/payload as the original, tagged with the source dead letter so the in-flight
     /// requeue rule ("at most one unprocessed requeue per dead letter") and the provenance chain
     /// (outbox attempt → dead letter) can be tracked.
@@ -106,7 +106,7 @@ public class OutboxMessage
     }
 
     /// <summary>
-    /// Schedules when the message may be re-polled after a failure (Decision #26).
+    /// Schedules when the message may be re-polled after a failure.
     /// The retry gate keeps a poison message from being re-claimed (and re-failed) on
     /// consecutive poll cycles, giving the underlying failure time to recover before
     /// the next attempt.

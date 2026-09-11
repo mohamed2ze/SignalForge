@@ -107,7 +107,7 @@ public sealed class ApiIntegrationTests : ApiTestBase
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
 
-    // ---------- Webhook signature verification (Decision #23) ----------
+    // ---------- Webhook signature verification ----------
 
     [Fact]
     public async Task IngestEvent_WithoutSignature_Returns_401()
@@ -354,7 +354,7 @@ public sealed class ApiIntegrationTests : ApiTestBase
 
         var deadLetterId = await SeedDeadLetterAsync();
 
-        // List (Level 5 paged envelope)
+        // List (paged envelope)
         var list = await client.GetAsync($"/{ApiDeadLetterRoute}");
         Assert.Equal(HttpStatusCode.OK, list.StatusCode);
         var listObj = JsonNode.Parse(await list.Content.ReadAsStringAsync())!.AsObject();

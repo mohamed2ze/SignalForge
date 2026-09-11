@@ -47,7 +47,7 @@ environment variables → command line.
 
 In production/compose, configure the **environment variables** (e.g. `ConnectionStrings__SignalForgeConnection`,
 `Seed__DefaultApiKey`). Locally, prefer **user-secrets**. `appsettings*.json` never carry those
-values (a CI secret-scan gate enforces this, see Stage 4 L3).
+values (the CI secret-scan gate enforces this).
 
 If no connection string is configured, the application starts but fails loudly at first database
 access with a clear "connection string" error.
@@ -71,7 +71,8 @@ to print them once at seed time.
 
 ## Docker Compose full stack (one-command)
 
-For a reproducible environment, Stage 4 L1 added `docker-compose.yml`. Secrets there come from a
+For a reproducible environment, `docker-compose.yml` brings the whole stack up in one command.
+Secrets there come from a
 gitignored `.env` file (template: `.env.example`) and are injected as container env vars — nothing
 secret is committed:
 

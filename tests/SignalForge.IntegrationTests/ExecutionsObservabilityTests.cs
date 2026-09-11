@@ -8,7 +8,7 @@ using SignalForge.Infrastructure.Data;
 namespace SignalForge.IntegrationTests;
 
 /// <summary>
-/// Integration tests for the execution observability surface (Stage 5, Level 4): paged/filtered
+/// Integration tests for the execution observability surface: paged/filtered
 /// execution history, server-side aggregates (status counts, step latency, failure causes), and
 /// cross-tenant isolation. A deterministic execution history is seeded once per run against the
 /// shared container DB using domain objects; private-set timestamps/statuses are written through

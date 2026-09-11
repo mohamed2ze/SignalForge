@@ -11,7 +11,7 @@ using SignalForge.Infrastructure.Data;
 namespace SignalForge.IntegrationTests;
 
 /// <summary>
-/// Shared scaffolding for the integration suite (Stage 6 consolidation): database access,
+/// Shared scaffolding for the integration suite: database access,
 /// idempotent tenant seeding, FK-safe cleanup, workflow/execution seeding, and the common HTTP
 /// workflow-surface helpers. Concrete classes keep their own <c>[Collection(MsSqlCollection.Name)]</c>
 /// and per-test tenant identity; the base owns no collection so class-level sequencing is unchanged.

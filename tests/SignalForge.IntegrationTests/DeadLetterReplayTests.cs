@@ -13,7 +13,7 @@ using SignalForge.Worker.Services;
 namespace SignalForge.IntegrationTests;
 
 /// <summary>
-/// Level 5 (Decision #25) behavioural coverage for dead-letter filtering, paging, and replay:
+/// Behavioural coverage for dead-letter filtering, paging, and replay:
 /// the paged/filtered list envelope, the single-in-flight replay rule, and the provenance chain
 /// (replay → outbox requeue → terminal re-failure → NEW dead letter linked back via
 /// ReplayedFromDeadLetterId). Uses its own dedicated tenant so the assertions are deterministic
@@ -173,7 +173,7 @@ public sealed class DeadLetterReplayTests : ApiTestBase
 
             // Drive the real outbox processor with the Test/Fail seam (throws before publishing):
             // MaxAttempts = 3 failing cycles => attempt 1, 2, then dead-letter on the 3rd. The
-            // per-message retry gate (Decision #26) is collapsed between cycles so the attempts
+            // per-message retry gate is collapsed between cycles so the attempts
             // run back-to-back here instead of over the real 2s/4s backoff.
             var processor = CreateProcessor();
             for (var i = 0; i < 3; i++)

@@ -49,8 +49,8 @@ public class DeadLetterDto
 }
 
 /// <summary>
-/// Paged envelope for the Level 5 dead-letter list (Decision #25): items plus the applied
-/// page/pageSize and the exact total matching the filters so clients can page without guessing.
+/// Paged envelope for the dead-letter list: items plus the applied page/pageSize and the exact
+/// total matching the filters so clients can page without guessing.
 /// </summary>
 public class PagedDeadLettersDto
 {

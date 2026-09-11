@@ -122,7 +122,7 @@ public class OutboxBrokerEndToEndTests : ApiTestBase
             });
 
             // MaxAttempts = 3 failing cycles => attempt 1, 2, then dead-letter on the 3rd. The
-            // per-message retry gate (Decision #26) is collapsed between cycles so the attempts
+            // per-message retry gate is collapsed between cycles so the attempts
             // run back-to-back here instead of over the real 2s/4s backoff.
             for (var i = 0; i < 3; i++)
             {

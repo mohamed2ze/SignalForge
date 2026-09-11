@@ -50,7 +50,7 @@ public class OutboxProcessor : IOutboxProcessor
 
             // Claim unprocessed messages. Failed-but-not-exhausted messages (FailedAt set,
             // AttemptCount less than MaxAttempts) are retried, but only once their per-message
-            // retry gate has passed (Decision #26): a poison message is scheduled (NextRetryAt)
+            // retry gate has passed: a poison message is scheduled (NextRetryAt)
             // and not re-claimed on consecutive cycles, so a single failing message can no longer
             // tight-loop the broker. Only dead-lettered messages disappear.
             var now = DateTime.UtcNow;
@@ -108,7 +108,7 @@ public class OutboxProcessor : IOutboxProcessor
                     }
                     else
                     {
-                        // Per-message exponential backoff (Decision #26): the message is not
+                        // Per-message exponential backoff: the message is not
                         // re-claimed until the backoff elapses. Per-message failures do not grow
                         // the global cycle backoff or open the circuit -- the loop is functioning
                         // normally; only the individual message is unhealthy.
@@ -128,7 +128,7 @@ public class OutboxProcessor : IOutboxProcessor
 
             await dbContext.SaveChangesAsync(cancellationToken);
 
-            // Per-message failures never reach here as cycle failures (Decision #26): they are
+            // Per-message failures never reach here as cycle failures: they are
             // individually scheduled via NextRetryAt and reported in the per-message log above.
             // The global circuit only opens for whole-cycle exceptions (handled in the outer catch).
             ResetBreaker();

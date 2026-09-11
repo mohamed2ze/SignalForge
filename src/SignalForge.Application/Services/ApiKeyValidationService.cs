@@ -48,9 +48,9 @@ public class ApiKeyValidationService : IApiKeyValidationService
             };
         }
 
-        // Deactivated tenants never validate, even with a structurally correct key. Without the
-        // global Tenant soft-delete filter (Decision #28) the Include above would surface the
-        // tenant either way, so the deactivation check is explicit here.
+        // Deactivated tenants never validate, even with a structurally correct key. Soft delete is not
+        // enforced by global query filters, so the Include above would surface the tenant either way
+        // and the deactivation check is explicit here.
         if (apiKeyEntity.Tenant is { DeletedAt: not null })
         {
             return new ApiKeyValidationResult
@@ -75,7 +75,7 @@ public class ApiKeyValidationService : IApiKeyValidationService
         // Mark the key as used. LastUsedAt is a best-effort observation, not a gate: it shares a
         // concurrency token (UpdatedAt) with other updates, so under concurrent validation the
         // write can lose the race and throw DbUpdateConcurrencyException. The key is still
-        // verified valid — losing the usage stamp must not fail the request (Decision #26).
+        // verified valid — losing the usage stamp must not fail the request.
         apiKeyEntity.MarkAsUsed();
         try
         {

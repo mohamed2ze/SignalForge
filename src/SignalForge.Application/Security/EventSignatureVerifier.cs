@@ -6,7 +6,7 @@ using System.Text;
 namespace SignalForge.Application.Security;
 
 /// <summary>
-/// HMAC-SHA256 signature scheme for inbound webhook events (Decision #23).
+/// HMAC-SHA256 signature scheme for inbound webhook events.
 ///
 /// Clients sign the raw request body exactly as transmitted:
 ///   X-SignalForge-Timestamp: <unix seconds>

@@ -56,7 +56,7 @@ namespace SignalForge.Application.Services
                 throw new InvalidOperationException($"Workflow version {workflowVersionId} not found for workflow {workflowId}");
             }
 
-            // Domain invariant: only published versions are executable (see Decision 13)
+            // Domain invariant: only published versions are executable
             if (!workflowVersion.IsPublished)
             {
                 throw new InvalidOperationException($"Workflow version {workflowVersionId} is not published");
@@ -140,8 +140,6 @@ namespace SignalForge.Application.Services
             // - In-flight (Pending/Running) or a retry that isn't due yet → busy, nothing to do.
             // - Failed with attempts remaining, or Retrying and due → retry in place (no duplicates).
             // - Failed with attempts exhausted → fail the execution.
-            // This is what lets the Worker execution pump drive retries without the engine
-            // minting a fresh step-execution record on every poll (see Decision #22).
             var existing = execution.StepExecutions
                 .FirstOrDefault(se => se.StepNumber == nextStepNumber);
 

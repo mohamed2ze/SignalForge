@@ -1,8 +1,8 @@
 namespace SignalForge.Domain.Models;
 
 /// <summary>
-/// Per-tenant signing secret used to verify inbound webhook event signatures (Decision #23:
-/// HMAC-SHA256 over the raw request body). Unlike API keys, the secret must be available in
+/// Per-tenant signing secret used to verify inbound webhook event signatures
+/// (HMAC-SHA256 over the raw request body). Unlike API keys, the secret must be available in
 /// recoverable form at request time to recompute the expected signature, so it is stored
 /// plaintext server-side; values are high-entropy and must never be logged or echoed.
 /// </summary>

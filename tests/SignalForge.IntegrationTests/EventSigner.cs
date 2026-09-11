@@ -8,7 +8,7 @@ namespace SignalForge.IntegrationTests;
 
 /// <summary>
 /// Client helpers for webhook event ingestion: every POST /api/events request must carry the
-/// X-SignalForge-Timestamp and X-SignalForge-Signature headers (Decision #23). The signature is
+/// X-SignalForge-Timestamp and X-SignalForge-Signature headers. The signature is
 /// computed over the EXACT raw body bytes that are sent, so tests serialize once and reuse that
 /// string for both the request and the HMAC.
 /// </summary>

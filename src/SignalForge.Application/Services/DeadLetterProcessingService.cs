@@ -111,7 +111,7 @@ public class DeadLetterProcessingService : IDeadLetterProcessingService
         if (deadLetter == null)
             return new DeadLetterReplayResult(DeadLetterReplayStatus.NotFound, null);
 
-        // Idempotency rule (Decision #25): at most one in-flight requeue per dead letter. The
+        // Idempotency rule: at most one in-flight requeue per dead letter. The
         // requeue is 'in flight' while an unprocessed outbox message tagged with this dead letter
         // exists; it clears as soon as that message is processed or exhausted (dead-lettered).
         var inFlight = await _dbContext.OutboxMessages.AnyAsync(
@@ -138,7 +138,7 @@ public class DeadLetterProcessingService : IDeadLetterProcessingService
         catch (DbUpdateException ex) when (IsUniqueViolation(ex))
         {
             // Two concurrent replays of the same dead letter both passed the in-flight check
-            // above; the filtered unique index (Decision #26) let only one requeue through. The
+            // above; the filtered unique index let only one requeue through. The
             // whole batch was rolled back at the DB, so unwind our in-memory changes and report
             // the idempotent outcome. (Remove on an Added entity detaches it; it will not be
             // re-inserted by a later SaveChanges in the same scope.)

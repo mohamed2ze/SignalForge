@@ -9,7 +9,7 @@ using SignalForge.Application.Security;
 namespace SignalForge.Api.Middleware;
 
 /// <summary>
-/// Enforces the webhook signing scheme (Decision #23) on every <c>POST /api/events</c> request.
+/// Enforces the webhook signing scheme on every <c>POST /api/events</c> request.
 /// Runs after authentication (so the tenant claim exists) and before the controller/model
 /// binding, using the RAW request body bytes that the signature was computed over. Any failure —
 /// missing/invalid headers, tampered body, wrong secret, stale timestamp — returns 401 before a

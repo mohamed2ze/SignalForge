@@ -5,7 +5,5 @@
 **/obj
 tests
 docs
-.signalforge-dev
 **/*.log
 README.md
-AGENTS.md

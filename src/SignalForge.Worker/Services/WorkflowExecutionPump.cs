@@ -14,7 +14,7 @@ namespace SignalForge.Worker.Services;
 /// (<see cref="IWorkflowExecutionOrchestratorService.AdvanceWorkflowExecutionAsync"/> had no
 /// production caller). SignalForge is run by the Worker because the Worker owns the outbox loop
 /// and structured logging already; the pump is the natural seat for a future distributed
-/// scheduler (Decision #22).
+/// scheduler.
 /// </summary>
 public class WorkflowExecutionPump : IWorkflowExecutionPump
 {
@@ -49,7 +49,7 @@ public class WorkflowExecutionPump : IWorkflowExecutionPump
                 // Only pick executions whose next step is not already in flight (Pending/Running):
                 // a step must not be double-started by repeated polls. Failed/Retrying steps are
                 // allowed through — the orchestrator re-enters them in place (retries on the same
-                // record) or fails the execution once attempts are exhausted (see Decision #22).
+                // record) or fails the execution once attempts are exhausted.
                 .Where(e => !dbContext.WorkflowStepExecutions.Any(se =>
                     se.WorkflowExecutionId == e.Id &&
                     se.StepNumber == e.CurrentStepNumber + 1 &&

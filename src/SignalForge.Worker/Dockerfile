@@ -1,5 +1,5 @@
 #------------------------------------------------------------------
-# SignalForge Worker image — multi-stage build (sdk -> runtime)
+# SignalForge Worker image — sdk build stage -> runtime stage
 #------------------------------------------------------------------
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 WORKDIR /src

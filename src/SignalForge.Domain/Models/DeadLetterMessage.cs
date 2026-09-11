@@ -19,9 +19,9 @@ public class DeadLetterMessage
     public DateTime CreatedAt { get; private set; } // When the dead letter was created
     public DateTime? ProcessedAt { get; private set; } // When it was manually processed (if ever)
     public bool IsProcessed { get; private set; } // Whether it has been manually processed
-    public int ReplayCount { get; private set; } // Number of times replayed (Decision #25)
-    public DateTime? LastReplayedAt { get; private set; } // Most recent replay time (Decision #25)
-    public Guid? ReplayedFromDeadLetterId { get; private set; } // The dead letter this one was replayed from, if any (Decision #25)
+    public int ReplayCount { get; private set; } // Number of times replayed
+    public DateTime? LastReplayedAt { get; private set; } // Most recent replay time
+    public Guid? ReplayedFromDeadLetterId { get; private set; } // The dead letter this one was replayed from, if any
 
     // Navigation properties (optional, for querying)
     public WorkflowExecution? WorkflowExecution { get; private set; }
@@ -84,7 +84,7 @@ public class DeadLetterMessage
     /// <summary>
     /// Creates a new dead letter message from an outbox message that exceeded its retry limits.
     /// Not tied to a workflow step, so the step reference fields are null. When the outbox message
-    /// is itself a dead-letter replay (Decision #25), the provenance chain is preserved on
+    /// is itself a dead-letter replay, the provenance chain is preserved on
     /// <see cref="ReplayedFromDeadLetterId"/> so the two occurrences stay distinguishable.
     /// </summary>
     /// <param name="outboxMessage">The failed outbox message</param>
@@ -109,7 +109,7 @@ public class DeadLetterMessage
     }
 
     /// <summary>
-    /// Records a replay of this dead letter (Decision #25): increments the replay counter and
+    /// Records a replay of this dead letter: increments the replay counter and
     /// stamps the last replay time so repeated replays are observable.
     /// </summary>
     public void RecordReplay()
@@ -119,7 +119,7 @@ public class DeadLetterMessage
     }
 
     /// <summary>
-    /// Compensates a replay attempt (Decision #26): called when the replay's outbox insert is
+    /// Compensates a replay attempt: called when the replay's outbox insert is
     /// rejected by the in-flight unique index, restoring the counters to the values captured
     /// before <see cref="RecordReplay"/> so the losing replica's in-memory state matches the DB
     /// (the whole replay transaction was rolled back, the counter changes never persisted).

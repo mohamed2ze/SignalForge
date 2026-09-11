@@ -1,8 +1,7 @@
 using System.Text.Json;
 using Microsoft.AspNetCore.Mvc;
-using SignalForge.Application.Services;
-
 using SignalForge.Api.Dtos;
+using SignalForge.Application.Services;
 using static SignalForge.Api.Controllers.ApiControllerExtensions;
 
 namespace SignalForge.Api.Controllers;

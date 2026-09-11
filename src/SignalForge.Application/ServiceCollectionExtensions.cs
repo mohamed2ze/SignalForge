@@ -43,7 +43,7 @@ namespace SignalForge.Application
             services.AddScoped<IStepProcessor, EventEmissionStepProcessor>();
             services.AddScoped<IStepProcessor, RetryableOperationStepProcessor>();
 
-            // Notification providers (Stage 5 L1): resolved by provider type through the registry;
+            // Notification providers, resolved by provider type through the registry;
             // the webhook provider uses the typed HttpClientFactory so its handler is mockable in
             // tests. Swap the simulated email/sms registrations for real adapters later.
             services.AddHttpClient<WebhookNotificationProvider>();

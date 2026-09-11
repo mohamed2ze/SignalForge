@@ -8,7 +8,7 @@ using Microsoft.Extensions.Logging;
 namespace SignalForge.IntegrationTests;
 
 /// <summary>
-/// Proves the Stage 4 structured-logging enrichment: every request's log line must carry the
+/// Proves the structured-logging enrichment: every request's log line must carry the
 /// stable scoped property names correlationId / tenantId / apiKeyId (the JSON formatter emits
 /// these verbatim for containers). A captured logger provider inspects the scope stack rather
 /// than the formatter, so this exercises the middleware enrichment independent of JSON output.

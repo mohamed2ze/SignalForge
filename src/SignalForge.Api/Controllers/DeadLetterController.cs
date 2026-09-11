@@ -1,8 +1,7 @@
 using System.Text.Json;
 using Microsoft.AspNetCore.Mvc;
-using SignalForge.Application.Services;
-
 using SignalForge.Api.Dtos;
+using SignalForge.Application.Services;
 using static SignalForge.Api.Controllers.ApiControllerExtensions;
 
 namespace SignalForge.Api.Controllers;
@@ -27,8 +26,8 @@ public class DeadLetterController : ControllerBase
     }
 
     /// <summary>
-    /// Gets dead letter messages for the current tenant with optional filtering and paging
-    /// (Level 5 / Decision #25): workflow (via step-execution provenance), cause substring on the
+    /// Gets dead letter messages for the current tenant with optional filtering and paging:
+    /// workflow (via step-execution provenance), cause substring on the
     /// final error message, processed-state, and a CreatedAt time window (ISO 8601).
     /// </summary>
     /// <param name="workflowId">Optional workflow to scope results to</param>
@@ -108,7 +107,7 @@ public class DeadLetterController : ControllerBase
     }
 
     /// <summary>
-    /// Replays a dead letter (Decision #25): requeues the message through the outbox for a fresh
+    /// Replays a dead letter: requeues the message through the outbox for a fresh
     /// delivery attempt. Idempotent — a second replay while the requeue is still in flight returns
     /// 409 Conflict instead of duplicating the requeue. The dead letter stays visible and records
     /// the replay (count + timestamp); a terminal re-failure lands as a new dead letter linked back

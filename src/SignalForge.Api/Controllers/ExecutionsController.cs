@@ -7,10 +7,10 @@ using static SignalForge.Api.Controllers.ApiControllerExtensions;
 namespace SignalForge.Api.Controllers;
 
 /// <summary>
-/// Execution observability endpoints (Stage 5, Level 4; Decision #24): server-side, tenant-scoped
-/// aggregates and paged history for a future dashboard. All queries are scoped to the caller's
-/// tenant via the <c>tenant_id</c> claim and the denormalized untouched execution tenant column.
-/// GET-only; the signing surface (POST /api/events) is unaffected by this controller.
+/// Execution observability endpoints: server-side, tenant-scoped aggregates and paged history
+/// for a future dashboard. All queries are scoped to the caller's tenant via the <c>tenant_id</c>
+/// claim and the denormalized, untouched execution tenant column. GET-only; the signing surface
+/// (POST /api/events) is unaffected by this controller.
 /// </summary>
 [ApiController]
 [Route("api/executions")]

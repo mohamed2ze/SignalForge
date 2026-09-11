@@ -125,7 +125,7 @@ public class OutboxProcessorTests
 
         var firstDelay = await processor.ProcessBatchAsync(CancellationToken.None);
 
-        // Per-message failures never grow the global backoff (Decision #26): healthy pacing on
+        // Per-message failures never grow the global backoff: healthy pacing on
         // the wire.
         Assert.Equal(TimeSpan.FromSeconds(5), firstDelay);
 

@@ -96,7 +96,7 @@ app.UseAuthentication();
 // Enrich log output with correlation/tenant/api-key scoped properties for every request.
 app.UseMiddleware<LoggingScopeMiddleware>();
 
-// Verify webhook signatures on POST /api/events (hard-required, Decision #23). Runs after auth
+// Verify webhook signatures on POST /api/events (hard-required). Runs after auth
 // (needs the tenant claim) and before the controllers, so rejection happens pre-DB-write.
 app.UseMiddleware<EventsSignatureMiddleware>();
 
@@ -174,8 +174,8 @@ try
             signingSecretOverride: seedSection.GetValue<string>("SigningSecret"));
 
         // Default is to NOT print generated credentials: the signing secret is stored in
-        // recoverable form for HMAC at request time (Decision #23) and must not end up in logs.
-        // Set Seed:ExposeGeneratedSecrets=true (local dev only) to echo the sample keys.
+        // recoverable form for HMAC at request time and must not end up in logs. Set
+        // Seed:ExposeGeneratedSecrets=true (local dev only) to echo the sample keys.
         if (seedSection.GetValue<bool>("ExposeGeneratedSecrets", false))
         {
             if (seed.ApiKey is not null || seed.SigningSecret is not null)

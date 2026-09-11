@@ -7,8 +7,8 @@ retryable operations — with multi-tenancy, API-key authentication, a transacti
 reliable messaging, exponential-backoff retries, and a dead-letter queue.
 
 > **Status:** early-stage prototype. The engine is demonstrable end to end; several integrations
-> (message broker, notification delivery) are currently simulated and are converged on real
-> implementations in subsequent development stages (see `.signalforge-dev/ROADMAP.md`).
+> (message broker, notification delivery) are currently simulated. Converging them on real
+> implementations is the next planned step.
 
 ---
 
@@ -152,14 +152,6 @@ never duplicates them.
 | `NotificationSimulation` | Simulates sending a notification (no real delivery yet) |
 | `EventEmission` | Emits a new event back into the platform |
 | `RetryableOperation` | Wraps an operation with retry logic (currently simulated by random failures) |
-
----
-
-## Project Management
-
-Development runs through a **multi-stage, multi-level agentic protocol** so that any AI coding
-agent can pick up where the last session left off. See `AGENTS.md` for the protocol and
-`.signalforge-dev/ROADMAP.md` for the master plan and current position.
 
 ---
 

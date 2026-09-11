@@ -74,7 +74,7 @@ public sealed record ExecutionAggregates(
 
 /// <summary>
 /// Read-only observability queries over workflow executions and step executions. Kept separate
-/// from the orchestrator so mutation logic stays focused (Decision #24). Every query is scoped to
+/// from the orchestrator so mutation logic stays focused. Every query is scoped to
 /// a single tenant on the denormalized <c>TenantId</c> execution column.
 /// </summary>
 public interface IExecutionObservabilityService

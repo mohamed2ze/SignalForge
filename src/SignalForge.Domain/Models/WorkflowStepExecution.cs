@@ -94,7 +94,8 @@ public class WorkflowStepExecution
         RouteToStepNumber = routeToStepNumber;
     }
 
-    /// </// Marks the step execution as failed.
+    /// <summary>
+    /// Marks the step execution as failed.
     /// </summary>
     /// <param name="errorMessage">Error message</param>
     public void Fail(string errorMessage)
@@ -141,8 +142,8 @@ public class WorkflowStepExecution
     /// <summary>
     /// Prepares the step execution for a retry attempt. Accepts a step that is currently in
     /// <see cref="WorkflowStepExecutionStatus.Retrying"/> (scheduled by the engine's backoff) or a
-    /// deliberately failed step that still has attempts left (Decision #22: re-entry retry in place,
-    /// so the retry happens on the same record instead of minting a duplicate).
+    /// deliberately failed step that still has attempts left — the retry happens on the same
+    /// record instead of minting a duplicate.
     /// </summary>
     public void PrepareForRetry()
     {

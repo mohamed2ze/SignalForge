@@ -47,7 +47,7 @@ builder.Services.AddSingleton<IOutboxProcessor, OutboxProcessor>();
 builder.Services.AddScoped<IOutboxMessageSender, OutboxMessageSender>();
 
 // Workflow execution pump: advances started workflow executions until they reach a terminal
-// state (see Decision #22). Singleton + per-cycle scope, paced by its hosted service.
+// state. Singleton + per-cycle scope, paced by its hosted service.
 builder.Services.Configure<ExecutionPumpOptions>(
     builder.Configuration.GetSection("ExecutionPump"));
 builder.Services.AddSingleton<IWorkflowExecutionPump, WorkflowExecutionPump>();

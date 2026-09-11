@@ -45,12 +45,11 @@ public class OutboxMessageConfiguration : IEntityTypeConfiguration<OutboxMessage
         builder.Property(ob => ob.ReplaySourceDeadLetterId)
             .IsRequired(false);
 
-        // Single in-flight requeue lookups (Decision #25): "any unprocessed outbox message
-        // replayed from dead letter X". No FK — the dead letter stays visible and deletable
-        // independently of a replay in flight.
-        // Enforced as a FILTERED UNIQUE index over the "in flight" subset (Decision #26): the
-        // filter makes both the idempotency rule race-proof — two concurrent replays of the same
-        // dead letter cannot both insert an unprocessed requeue — and the index small (only rows
+        // Single in-flight requeue lookups: "any unprocessed outbox message replayed from dead
+        // letter X". No FK — the dead letter stays visible and deletable independently of a
+        // replay in flight. Enforced as a FILTERED UNIQUE index over the "in flight" subset,
+        // which makes the idempotency rule race-proof — two concurrent replays of the same dead
+        // letter cannot both insert an unprocessed requeue — and keeps the index small (only rows
         // where IsProcessed = false participate, and each dead letter can have at most one of
         // those). Processed/exhausted requeues leave the index; a later re-replay is allowed.
         builder.HasIndex(ob => ob.ReplaySourceDeadLetterId)

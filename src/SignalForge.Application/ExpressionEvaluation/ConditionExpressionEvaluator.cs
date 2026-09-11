@@ -36,7 +36,7 @@ public static class ConditionExpressionEvaluator
     /// <summary>
     /// Maximum nesting depth (parentheses and 'not' chains) accepted by the parser. Prevents a
     /// pathological expression like a thousand nested parentheses from exhausting the stack; the
-    /// parser fails fast with an error instead (Decision #26).
+    /// parser fails fast with an error instead.
     /// </summary>
     public const int MaxParseDepth = 64;
 

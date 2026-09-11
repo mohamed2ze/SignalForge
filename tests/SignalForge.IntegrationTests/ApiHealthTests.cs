@@ -6,7 +6,7 @@ using Microsoft.Extensions.Configuration;
 namespace SignalForge.IntegrationTests;
 
 /// <summary>
-/// Covers the Stage 4 health endpoints: /health/live must answer 200 whenever the API process
+/// Covers the health endpoints: /health/live must answer 200 whenever the API process
 /// is up (even if the DB is down), and /health/ready must answer 200 with the DB reachable and
 /// 503 when it is not. Uses the shared Testcontainers SQL Server via the MsSqlCollection.
 /// </summary>

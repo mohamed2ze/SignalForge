@@ -1,5 +1,5 @@
 #------------------------------------------------------------------
-# SignalForge API image — multi-stage build (sdk -> aspnet runtime)
+# SignalForge API image — sdk build stage -> aspnet runtime stage
 #------------------------------------------------------------------
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 WORKDIR /src

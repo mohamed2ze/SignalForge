@@ -9,7 +9,7 @@ using SignalForge.Infrastructure.Data;
 namespace SignalForge.IntegrationTests;
 
 /// <summary>
-/// Stage 6, Level 1 (Decision #28) regression pins for soft delete WITHOUT global query filters.
+/// Regression pins for soft delete WITHOUT global query filters.
 ///
 /// The global Tenant/Workflow filters were removed because a filter on the required end of a
 /// relationship silently drops children through INNER JOINs (EF 10622). The live bug: after
@@ -47,7 +47,7 @@ public sealed class SoftDeleteQueryFilterTests : ApiTestBase
 
         try
         {
-            // Basline: the execution is visible with its workflow name before deletion.
+            // Baseline: the execution is visible with its workflow name before deletion.
             var before = await GetExecutionsAsync(client, workflowId);
             Assert.Equal(1, before.TotalCount);
             var rowBefore = Assert.Single(before.Items);

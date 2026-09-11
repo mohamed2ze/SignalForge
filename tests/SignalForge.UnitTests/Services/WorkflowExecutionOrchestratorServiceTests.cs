@@ -221,7 +221,7 @@ public class WorkflowExecutionOrchestratorServiceTests
         Assert.Contains("not published", ex.Message);
     }
 
-    // ---------- retry re-entry (Decision #22: pump drives in-place retries, no duplicates) ----------
+    // ---------- retry re-entry: the pump drives in-place retries, no duplicate records ----------
 
     [Fact]
     public async Task Failing_step_is_retried_in_place_when_backoff_is_due()

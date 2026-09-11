@@ -1,7 +1,7 @@
 # Webhook event signing (inbound)
 
 Every `POST /api/events` request must prove it was sent by someone holding the tenant's
-signing secret (Decision #23). The API rejects any signed request that fails verification with
+signing secret. The API rejects any signed request that fails verification with
 `401` **before** a single database write.
 
 ## Scheme
@@ -42,13 +42,13 @@ string used in `printf`. Serving clients should sign the same buffer they send (
 ## Getting the secret
 
 - The seeder generates credentials with a cryptographic RNG. By default they are **not** printed
-  to logs (the signing secret must never appear in logs — Decision #23). For local dev only, set
+  to logs (the signing secret must never appear in logs). For local dev only, set
   `Seed:ExposeGeneratedSecrets=true` to echo them once to the API container logs
   (`[Seed] ... Webhook signing secret for local dev: ...`), or provide a fixed value via `.env` /
   appsettings override `Seed:SigningSecret`.
 - In tests, every host that seeds the shared tenant must supply a **deterministic**
   `Seed:SigningSecret` (e.g. `ApiTestFactory.SigningSecret`); a random one leaks into tests that
-  share the tenant and breaks their signature verification (see Decision #23 Consequences).
+  share the tenant and breaks their signature verification.
 
 ## Verification behavior
 
