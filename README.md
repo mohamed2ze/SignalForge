@@ -159,4 +159,3 @@ never duplicates them.
 
 - `docs/development/environment.md` — dev environment and SQL Server setup
 - `docs/development/event-signing.md` — webhook event signing scheme (HMAC-SHA256) and client example
-- `SUMMARY_OF_FIXES.md` — historical bug-fix log
