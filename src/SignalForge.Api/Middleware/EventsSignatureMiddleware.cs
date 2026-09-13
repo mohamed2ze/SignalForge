@@ -18,20 +18,17 @@ namespace SignalForge.Api.Middleware;
 public class EventsSignatureMiddleware
 {
     private readonly RequestDelegate _next;
-    private readonly ISignalForgeDbContext _dbContext;
     private readonly ILogger<EventsSignatureMiddleware> _logger;
 
     public EventsSignatureMiddleware(
         RequestDelegate next,
-        ISignalForgeDbContext dbContext,
         ILogger<EventsSignatureMiddleware> logger)
     {
         _next = next;
-        _dbContext = dbContext;
         _logger = logger;
     }
 
-    public async Task InvokeAsync(HttpContext context)
+    public async Task InvokeAsync(HttpContext context, ISignalForgeDbContext dbContext)
     {
         var request = context.Request;
         var isEventPost =
@@ -83,7 +80,7 @@ public class EventsSignatureMiddleware
         }
         request.Body.Position = 0;
 
-        var signingSetting = await _dbContext.TenantWebhookSigningSettings
+        var signingSetting = await dbContext.TenantWebhookSigningSettings
             .FirstOrDefaultAsync(s => s.TenantId == tenantId, context.RequestAborted);
 
         if (signingSetting is null)
