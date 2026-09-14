@@ -4,7 +4,9 @@ using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
+using SignalForge.Application.Security;
 using SignalForge.Application.Services;
+using SignalForge.Domain.Enums;
 using SignalForge.Domain.Models;
 
 namespace SignalForge.Application.Services
@@ -16,13 +18,18 @@ namespace SignalForge.Application.Services
     {
         private readonly HttpClient _httpClient;
         private readonly ILogger<HttpWebhookStepProcessor> _logger;
+        private readonly OutboundWebhookOptions _options;
+
+        public string StepTypeKey => nameof(StepType.HttpWebhook);
 
         public HttpWebhookStepProcessor(
             HttpClient httpClient,
-            ILogger<HttpWebhookStepProcessor> logger)
+            ILogger<HttpWebhookStepProcessor> logger,
+            OutboundWebhookOptions? options = null)
         {
             _httpClient = httpClient;
             _logger = logger;
+            _options = options ?? new OutboundWebhookOptions();
         }
 
         /// <inheritdoc />
@@ -39,8 +46,11 @@ namespace SignalForge.Application.Services
             var headersJson = config.GetProperty("headers").GetRawText();
             var bodyJson = config.GetProperty("body").GetRawText();
 
+            // SSRF guard: https-only (unless allowlisted), no localhost/private/link-local targets.
+            var targetUri = OutboundUrlValidator.Validate(url, _options);
+
             // Create HTTP request
-            var request = new HttpRequestMessage(new HttpMethod(method), url);
+            var request = new HttpRequestMessage(new HttpMethod(method), targetUri);
 
             // Add headers
             if (!string.IsNullOrEmpty(headersJson))
@@ -60,13 +70,15 @@ namespace SignalForge.Application.Services
 
             try
             {
-                _logger.LogInformation("Executing HTTP webhook step {StepId} to {Url}", stepExecution.Id, url);
+                _logger.LogInformation("Executing HTTP webhook step {StepId} to {Url}",
+                    stepExecution.Id, OutboundUrlValidator.ScrubForLog(targetUri));
 
                 // Send request
                 var response = await _httpClient.SendAsync(request, cancellationToken);
 
-                // Read response
-                var responseBody = await response.Content.ReadAsStringAsync(cancellationToken);
+                // Read response (size-capped to bound memory use)
+                var responseBody = await OutboundResponseBody.ReadCappedAsync(
+                    response.Content, _options.MaxResponseBytes, cancellationToken);
 
                 // Check if successful (2xx status code)
                 if ((int)response.StatusCode >= 200 && (int)response.StatusCode < 300)
@@ -75,15 +87,16 @@ namespace SignalForge.Application.Services
                         stepExecution.Id, (int)response.StatusCode);
 
                     // Store response in step execution output
-                    stepExecution.Succeed(responseBody);
+                    stepExecution.Succeed(StorageText.TruncateForStorage(responseBody));
                     return true; // Continue to next step
                 }
                 else
                 {
-                    var errorMsg = $"HTTP webhook step failed with status {(int)response.StatusCode}: {responseBody}";
+                    var errorMsg = StorageText.TruncateForStorage(
+                        $"HTTP webhook step failed with status {(int)response.StatusCode}: {responseBody}");
                     _logger.LogWarning("HTTP webhook step {StepId} {ErrorMsg}", stepExecution.Id, errorMsg);
 
-                    stepExecution.Fail(errorMsg);
+                    stepExecution.Fail(errorMsg!);
                     return false; // Will trigger retry logic
                 }
             }

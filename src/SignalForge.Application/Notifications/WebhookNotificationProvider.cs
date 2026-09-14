@@ -1,11 +1,11 @@
 using System;
 using System.Linq;
-using System.Net.Http;
 using System.Text;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
+using SignalForge.Application.Security;
 
 namespace SignalForge.Application.Notifications;
 
@@ -19,13 +19,18 @@ public class WebhookNotificationProvider : INotificationProvider
 {
     private readonly HttpClient _httpClient;
     private readonly ILogger<WebhookNotificationProvider> _logger;
+    private readonly OutboundWebhookOptions _options;
 
     public const string DeliveryIdHeaderName = "X-Delivery-Id";
 
-    public WebhookNotificationProvider(HttpClient httpClient, ILogger<WebhookNotificationProvider> logger)
+    public WebhookNotificationProvider(
+        HttpClient httpClient,
+        ILogger<WebhookNotificationProvider> logger,
+        OutboundWebhookOptions? options = null)
     {
         _httpClient = httpClient;
         _logger = logger;
+        _options = options ?? new OutboundWebhookOptions();
     }
 
     public string ProviderType => "webhook";
@@ -35,8 +40,17 @@ public class WebhookNotificationProvider : INotificationProvider
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(message);
-        if (string.IsNullOrWhiteSpace(message.Recipient) || !Uri.TryCreate(message.Recipient, UriKind.Absolute, out _))
-            throw new NotificationDeliveryException($"Webhook recipient must be an absolute URL, got '{message.Recipient}'.");
+
+        // SSRF guard: https-only (unless allowlisted), no localhost/private/link-local targets.
+        Uri recipient;
+        try
+        {
+            recipient = OutboundUrlValidator.Validate(message.Recipient, _options);
+        }
+        catch (InvalidOperationException ex)
+        {
+            throw new NotificationDeliveryException(ex.Message);
+        }
 
         var payload = new
         {
@@ -45,7 +59,7 @@ public class WebhookNotificationProvider : INotificationProvider
             body = message.Body
         };
 
-        using var request = new HttpRequestMessage(HttpMethod.Post, message.Recipient)
+        using var request = new HttpRequestMessage(HttpMethod.Post, recipient)
         {
             Content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json")
         };
@@ -56,7 +70,8 @@ public class WebhookNotificationProvider : INotificationProvider
 
             if ((int)response.StatusCode < 200 || (int)response.StatusCode >= 300)
             {
-                var body = await response.Content.ReadAsStringAsync(cancellationToken);
+                var body = await OutboundResponseBody.ReadCappedAsync(
+                    response.Content, _options.MaxResponseBytes, cancellationToken);
                 throw new NotificationDeliveryException(
                     $"Webhook provider rejected the notification with status {(int)response.StatusCode}: {body}");
             }
@@ -69,7 +84,7 @@ public class WebhookNotificationProvider : INotificationProvider
 
             _logger.LogInformation(
                 "Webhook notification delivered to {Recipient} with deliveryId {deliveryId} (HTTP {StatusCode})",
-                message.Recipient, deliveryId, (int)response.StatusCode);
+                OutboundUrlValidator.ScrubForLog(recipient), deliveryId, (int)response.StatusCode);
 
             return new NotificationDeliveryResult(
                 deliveryId,
@@ -80,6 +95,10 @@ public class WebhookNotificationProvider : INotificationProvider
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
             throw new NotificationDeliveryException("Webhook provider request timed out.");
+        }
+        catch (InvalidOperationException ex)
+        {
+            throw new NotificationDeliveryException(ex.Message);
         }
         catch (NotificationDeliveryException)
         {

@@ -1,5 +1,7 @@
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 using SignalForge.Application.Notifications;
+using SignalForge.Application.Security;
 using SignalForge.Application.Services;
 
 namespace SignalForge.Application
@@ -25,7 +27,7 @@ namespace SignalForge.Application
             services.AddScoped<IDeadLetterProcessingService, DeadLetterProcessingService>();
             services.AddScoped<IExecutionObservabilityService, ExecutionObservabilityService>();
 
-            // Register step processors by interface (for enumeration/DI) and by concrete type
+            // Ordered step processors by interface (for enumeration/DI) and by concrete type
             // (the orchestrator resolves processors by concrete type via GetStepProcessorForType).
             services.AddScoped<HttpWebhookStepProcessor>();
             services.AddScoped<DelayStepProcessor>();
@@ -43,16 +45,42 @@ namespace SignalForge.Application
             services.AddScoped<IStepProcessor, EventEmissionStepProcessor>();
             services.AddScoped<IStepProcessor, RetryableOperationStepProcessor>();
 
+            // Step processors are additionally resolved by step type through this registry
+            // (mirrors the notification-provider registry pattern).
+            services.AddScoped<IStepProcessorRegistry, StepProcessorRegistry>();
+
             // Notification providers, resolved by provider type through the registry;
             // the webhook provider uses the typed HttpClientFactory so its handler is mockable in
             // tests. Swap the simulated email/sms registrations for real adapters later.
-            services.AddHttpClient<WebhookNotificationProvider>();
+            services.AddOptions<OutboundWebhookOptions>();
+            services.AddHttpClient<WebhookNotificationProvider>().ConfigureOutboundWebhookDefaults();
+            services.AddHttpClient(Options.DefaultName).ConfigureOutboundWebhookDefaults();
             services.AddTransient<INotificationProvider, EmailNotificationProvider>();
             services.AddTransient<INotificationProvider, SmsNotificationProvider>();
             services.AddTransient<INotificationProvider>(sp => sp.GetRequiredService<WebhookNotificationProvider>());
             services.AddScoped<INotificationProviderRegistry, NotificationProviderRegistry>();
 
             return services;
+        }
+
+        /// <summary>
+        /// Hardens the outbound webhook HttpClient pipeline: https-only, redirects disabled, an
+        /// SSRF guard handler on the request path, and explicit connect/request timeouts. Applied
+        /// to the typed webhook provider client and to the anonymous client used by the workflow
+        /// webhook step processor.
+        /// </summary>
+        private static IHttpClientBuilder ConfigureOutboundWebhookDefaults(this IHttpClientBuilder builder)
+        {
+            return builder
+                .ConfigurePrimaryHttpMessageHandler(sp => new SocketsHttpHandler
+                {
+                    AllowAutoRedirect = false,
+                    ConnectTimeout = sp.GetRequiredService<IOptions<OutboundWebhookOptions>>().Value.ConnectTimeout,
+                })
+                .AddHttpMessageHandler(sp => new OutboundHttpRequestGuardHandler(
+                    sp.GetRequiredService<IOptions<OutboundWebhookOptions>>().Value))
+                .ConfigureHttpClient((sp, client) =>
+                    client.Timeout = sp.GetRequiredService<IOptions<OutboundWebhookOptions>>().Value.Timeout);
         }
     }
 }

@@ -67,6 +67,22 @@ public class WebhookNotificationProviderTests
             () => provider.SendAsync(Message with { Recipient = "not a url" }, CancellationToken.None));
     }
 
+    [Theory]
+    [InlineData("http://example.com/hook")]
+    [InlineData("https://127.0.0.1/hook")]
+    [InlineData("https://localhost/hook")]
+    [InlineData("https://10.0.0.2/hook")]
+    [InlineData("https://[::1]/hook")]
+    public async Task Ssrf_target_recipient_throws_before_any_http_call(string recipient)
+    {
+        var provider = Provider(new FixedHandler(_ => throw new InvalidOperationException("must not be reached")));
+
+        var ex = await Assert.ThrowsAsync<NotificationDeliveryException>(
+            () => provider.SendAsync(Message with { Recipient = recipient }, CancellationToken.None));
+
+        Assert.DoesNotContain("must not be reached", ex.Message);
+    }
+
     private sealed class FixedHandler : HttpMessageHandler
     {
         private readonly Func<HttpRequestMessage, HttpResponseMessage> _handler;
