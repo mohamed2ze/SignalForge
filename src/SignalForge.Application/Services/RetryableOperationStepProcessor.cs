@@ -1,8 +1,10 @@
+using System.Globalization;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 using SignalForge.Application.Services;
+using SignalForge.Domain.Enums;
 using SignalForge.Domain.Models;
 
 namespace SignalForge.Application.Services
@@ -14,6 +16,8 @@ namespace SignalForge.Application.Services
     public class RetryableOperationStepProcessor : IStepProcessor
     {
         private readonly ILogger<RetryableOperationStepProcessor> _logger;
+
+        public string StepTypeKey => nameof(StepType.RetryableOperation);
 
         public RetryableOperationStepProcessor(ILogger<RetryableOperationStepProcessor> logger)
         {
@@ -74,24 +78,50 @@ namespace SignalForge.Application.Services
             // Simulate operation processing time
             await Task.Delay(200, cancellationToken);
 
-            // For demonstration, we'll make some operations fail randomly to show retry behavior
-            // In a real system, this would be based on actual operation success/failure
+            return !SimulateFailure(operationType, parametersJson);
+        }
 
-            // Simulate that some operations are inherently unreliable
+        /// <summary>
+        /// Draws a deterministic pass/fail outcome for the demo operation. When the step parameters
+        /// carry an explicit <c>failureRate</c> (0..1), that probability is used verbatim
+        /// (clamped); otherwise the built-in per-operation defaults apply.
+        /// </summary>
+        private static bool SimulateFailure(string operationType, string parametersJson)
+        {
+            var failureRate = ReadFailureRate(parametersJson);
+            if (failureRate is not null)
+                return Random.Shared.NextDouble() < Math.Clamp(failureRate.Value, 0d, 1d);
+
+            // Simulate that some operations are inherently unreliable.
             if (operationType.Equals("unreliable_api_call", StringComparison.OrdinalIgnoreCase))
+                return Random.Shared.NextDouble() < 0.3;
+            if (operationType.Equals("external_service", StringComparison.OrdinalIgnoreCase))
+                return Random.Shared.NextDouble() < 0.4;
+            return Random.Shared.NextDouble() < 0.1;
+        }
+
+        private static double? ReadFailureRate(string parametersJson)
+        {
+            if (string.IsNullOrWhiteSpace(parametersJson))
+                return null;
+
+            try
             {
-                // Fail 70% of the time to demonstrate retries
-                return new System.Random().NextDouble() > 0.3;
+                using var document = JsonDocument.Parse(parametersJson);
+                if (!document.RootElement.TryGetProperty("failureRate", out var failureRate))
+                    return null;
+
+                if (failureRate.ValueKind == JsonValueKind.Number)
+                    return failureRate.GetDouble();
+                if (failureRate.ValueKind == JsonValueKind.String && double.TryParse(
+                    failureRate.GetString(), NumberStyles.Float, CultureInfo.InvariantCulture, out var rate))
+                    return rate;
+
+                return null;
             }
-            else if (operationType.Equals("external_service", StringComparison.OrdinalIgnoreCase))
+            catch (JsonException)
             {
-                // Fail 40% of the time
-                return new System.Random().NextDouble() > 0.4;
-            }
-            else
-            {
-                // Most operations succeed by default
-                return new System.Random().NextDouble() > 0.1;
+                return null;
             }
         }
     }

@@ -1,5 +1,4 @@
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using SignalForge.Application.Notifications;
 using SignalForge.Application.Services;
@@ -16,12 +15,11 @@ public class WorkflowExecutionOrchestratorServiceTests
             .UseInMemoryDatabase(Guid.NewGuid().ToString())
             .Options);
 
-    private static IServiceProvider BuildProvider(SignalForgeDbContext db)
+    private static IStepProcessorRegistry BuildProcessorRegistry()
     {
-        var services = new ServiceCollection();
-        services.AddSingleton(_ => new DelayStepProcessor(NullLogger<DelayStepProcessor>.Instance));
-        services.AddSingleton(_ => new ConditionalStepProcessor(NullLogger<ConditionalStepProcessor>.Instance));
-        services.AddSingleton(_ => new LogAuditStepProcessor(NullLogger<LogAuditStepProcessor>.Instance));
+        var delay = new DelayStepProcessor(NullLogger<DelayStepProcessor>.Instance);
+        var conditional = new ConditionalStepProcessor(NullLogger<ConditionalStepProcessor>.Instance);
+        var logAudit = new LogAuditStepProcessor(NullLogger<LogAuditStepProcessor>.Instance);
 
         // NotificationStepProcessor + providers: needed for the retry re-entry tests, where a
         // notification step with no "recipient" throws KeyNotFoundException deterministically.
@@ -30,12 +28,14 @@ public class WorkflowExecutionOrchestratorServiceTests
             new EmailNotificationProvider(NullLogger<EmailNotificationProvider>.Instance),
             new SmsNotificationProvider(NullLogger<SmsNotificationProvider>.Instance)
         ]);
-        services.AddSingleton<INotificationProviderRegistry>(_ => registry);
-        services.AddSingleton(_ => new NotificationStepProcessor(
+        var notification = new NotificationStepProcessor(
             registry,
-            NullLogger<NotificationStepProcessor>.Instance));
+            NullLogger<NotificationStepProcessor>.Instance);
 
-        return services.BuildServiceProvider();
+        return new StepProcessorRegistry(
+        [
+            delay, conditional, logAudit, notification
+        ]);
     }
 
     private static async Task<(Guid WorkflowId, Guid VersionId, Guid EventId, Guid TenantId)> SeedAsync(
@@ -70,7 +70,7 @@ public class WorkflowExecutionOrchestratorServiceTests
             version.AddStep(2, nameof(StepType.Delay), """{"seconds":0}""", "gap-2");
         });
         var orchestrator = new WorkflowExecutionOrchestratorService(
-            db, BuildProvider(db), NullLogger<WorkflowExecutionOrchestratorService>.Instance);
+            db, BuildProcessorRegistry(), NullLogger<WorkflowExecutionOrchestratorService>.Instance);
 
         var execution = await orchestrator.StartWorkflowExecutionAsync(workflowId, versionId, eventId, tenantId);
 
@@ -100,7 +100,7 @@ public class WorkflowExecutionOrchestratorServiceTests
                 """{"expression":"$.event.type == 'order.created'","trueStep":4,"falseStep":5}""");
         });
         var orchestrator = new WorkflowExecutionOrchestratorService(
-            db, BuildProvider(db), NullLogger<WorkflowExecutionOrchestratorService>.Instance);
+            db, BuildProcessorRegistry(), NullLogger<WorkflowExecutionOrchestratorService>.Instance);
 
         var execution = await orchestrator.StartWorkflowExecutionAsync(workflowId, versionId, eventId, tenantId);
 
@@ -125,7 +125,7 @@ public class WorkflowExecutionOrchestratorServiceTests
             },
             eventType: "order.cancelled");
         var orchestrator = new WorkflowExecutionOrchestratorService(
-            db, BuildProvider(db), NullLogger<WorkflowExecutionOrchestratorService>.Instance);
+            db, BuildProcessorRegistry(), NullLogger<WorkflowExecutionOrchestratorService>.Instance);
 
         var execution = await orchestrator.StartWorkflowExecutionAsync(workflowId, versionId, eventId, tenantId);
 
@@ -144,7 +144,7 @@ public class WorkflowExecutionOrchestratorServiceTests
             version.AddStep(1, nameof(StepType.LogAudit), """{"message":"hi","logLevel":"information"}""");
         });
         var orchestrator = new WorkflowExecutionOrchestratorService(
-            db, BuildProvider(db), NullLogger<WorkflowExecutionOrchestratorService>.Instance);
+            db, BuildProcessorRegistry(), NullLogger<WorkflowExecutionOrchestratorService>.Instance);
 
         var execution = await orchestrator.StartWorkflowExecutionAsync(workflowId, versionId, eventId, tenantId);
 
@@ -171,7 +171,7 @@ public class WorkflowExecutionOrchestratorServiceTests
             },
             eventPayload: """{"orderId":"ORD-1"}""");
         var orchestrator = new WorkflowExecutionOrchestratorService(
-            db, BuildProvider(db), NullLogger<WorkflowExecutionOrchestratorService>.Instance);
+            db, BuildProcessorRegistry(), NullLogger<WorkflowExecutionOrchestratorService>.Instance);
 
         var execution = await orchestrator.StartWorkflowExecutionAsync(workflowId, versionId, eventId, tenantId);
 
@@ -195,7 +195,7 @@ public class WorkflowExecutionOrchestratorServiceTests
         });
 
         var orchestrator = new WorkflowExecutionOrchestratorService(
-            db, BuildProvider(db), NullLogger<WorkflowExecutionOrchestratorService>.Instance);
+            db, BuildProcessorRegistry(), NullLogger<WorkflowExecutionOrchestratorService>.Instance);
 
         await Assert.ThrowsAsync<InvalidOperationException>(() =>
             orchestrator.StartWorkflowExecutionAsync(workflowId, versionId, eventId, Guid.NewGuid()));
@@ -213,7 +213,7 @@ public class WorkflowExecutionOrchestratorServiceTests
         var (workflowId, versionId, eventId, tenantId) = await SeedAsync(
             db, version => version.AddStep(1, nameof(StepType.Delay), """{"seconds":0}"""), publish: false);
         var orchestrator = new WorkflowExecutionOrchestratorService(
-            db, BuildProvider(db), NullLogger<WorkflowExecutionOrchestratorService>.Instance);
+            db, BuildProcessorRegistry(), NullLogger<WorkflowExecutionOrchestratorService>.Instance);
 
         var ex = await Assert.ThrowsAsync<InvalidOperationException>(() =>
             orchestrator.StartWorkflowExecutionAsync(workflowId, versionId, eventId, tenantId));
@@ -234,7 +234,7 @@ public class WorkflowExecutionOrchestratorServiceTests
             version.AddStep(1, nameof(StepType.NotificationSimulation), """{"type":"email"}""");
         });
         var orchestrator = new WorkflowExecutionOrchestratorService(
-            db, BuildProvider(db), NullLogger<WorkflowExecutionOrchestratorService>.Instance);
+            db, BuildProcessorRegistry(), NullLogger<WorkflowExecutionOrchestratorService>.Instance);
 
         var execution = await orchestrator.StartWorkflowExecutionAsync(workflowId, versionId, eventId, tenantId);
 
@@ -270,7 +270,7 @@ public class WorkflowExecutionOrchestratorServiceTests
             version.AddStep(1, nameof(StepType.NotificationSimulation), """{"type":"email"}""");
         });
         var orchestrator = new WorkflowExecutionOrchestratorService(
-            db, BuildProvider(db), NullLogger<WorkflowExecutionOrchestratorService>.Instance);
+            db, BuildProcessorRegistry(), NullLogger<WorkflowExecutionOrchestratorService>.Instance);
 
         var execution = await orchestrator.StartWorkflowExecutionAsync(workflowId, versionId, eventId, tenantId);
 
@@ -294,5 +294,82 @@ public class WorkflowExecutionOrchestratorServiceTests
         Assert.Equal(WorkflowStepExecutionStatus.Failed, step.Status);
         Assert.Equal(WorkflowExecutionStatus.Failed, execution.Status);
         Assert.True(execution.IsCompleted());
+    }
+
+    [Fact]
+    public async Task Failing_step_exhausting_attempts_creates_exactly_one_dead_letter_and_fails_execution()
+    {
+        var db = CreateDb();
+        var (workflowId, versionId, eventId, tenantId) = await SeedAsync(db, version =>
+        {
+            version.AddStep(1, nameof(StepType.NotificationSimulation), """{"type":"email"}""");
+        });
+        var orchestrator = new WorkflowExecutionOrchestratorService(
+            db, BuildProcessorRegistry(), NullLogger<WorkflowExecutionOrchestratorService>.Instance);
+
+        var execution = await orchestrator.StartWorkflowExecutionAsync(workflowId, versionId, eventId, tenantId);
+
+        // Attempt 1 creates the record and (after the deterministic throw) schedules a retry.
+        await orchestrator.AdvanceWorkflowExecutionAsync(execution.Id);
+        var step = execution.StepExecutions.Single();
+
+        // Attempts 2..3: force-open the retry window before each re-entry.
+        for (var attempt = 2; attempt <= 3; attempt++)
+        {
+            db.Entry(step).Property(s => s.NextRetryAt).CurrentValue = DateTime.UtcNow.AddSeconds(-1);
+            await db.SaveChangesAsync();
+            await orchestrator.AdvanceWorkflowExecutionAsync(execution.Id);
+        }
+
+        // Exhausted: the shared retry/dead-letter path produced exactly one dead letter and a
+        // Failed execution, and the dead letter points back at this step execution.
+        var deadLetter = await db.DeadLetterMessages.SingleAsync();
+        Assert.Equal(WorkflowExecutionStatus.Failed, execution.Status);
+        Assert.Equal(deadLetter.WorkflowExecutionId, execution.Id);
+        Assert.Equal(deadLetter.WorkflowStepExecutionId, step.Id);
+        Assert.Equal(nameof(StepType.NotificationSimulation), deadLetter.FailedStepType);
+        Assert.Equal(3, deadLetter.FinalAttemptCount);
+    }
+
+    [Fact]
+    public async Task Manual_retry_schedules_the_shared_backoff_and_is_tenant_scoped()
+    {
+        var db = CreateDb();
+        var (workflowId, versionId, eventId, tenantId) = await SeedAsync(db, version =>
+        {
+            version.AddStep(1, nameof(StepType.Delay), """{"seconds":0}""", "step-1");
+        });
+        var orchestrator = new WorkflowExecutionOrchestratorService(
+            db, BuildProcessorRegistry(), NullLogger<WorkflowExecutionOrchestratorService>.Instance);
+
+        var execution = await orchestrator.StartWorkflowExecutionAsync(workflowId, versionId, eventId, tenantId);
+
+        // A failed step execution with attempts remaining, as the worker would leave one behind.
+        var step = await db.WorkflowSteps.SingleAsync(s => s.WorkflowVersionId == versionId && s.StepNumber == 1);
+        var stepExecution = WorkflowStepExecution.Create(execution.Id, step.Id, 1);
+        stepExecution.Start();
+        stepExecution.Fail("simulated failure");
+        db.WorkflowStepExecutions.Add(stepExecution);
+        await db.SaveChangesAsync();
+
+        // The shared exponential backoff (2^attempt) is applied, all in one tenant-scoped operation.
+        var scheduled = await orchestrator.ScheduleStepRetryAsync(execution.Id, stepExecution.Id, tenantId);
+        Assert.Equal(StepRetryStatus.Scheduled, scheduled.Status);
+        Assert.Equal(stepExecution.Id, scheduled.StepExecution!.Id);
+        Assert.Equal(WorkflowStepExecutionStatus.Retrying, scheduled.StepExecution.Status);
+        Assert.NotNull(scheduled.StepExecution.NextRetryAt);
+        Assert.True(scheduled.StepExecution.NextRetryAt > DateTime.UtcNow);
+
+        // A retrying step whose window hasn't come due is not re-booked.
+        var again = await orchestrator.ScheduleStepRetryAsync(execution.Id, stepExecution.Id, tenantId);
+        Assert.Equal(StepRetryStatus.NotEligible, again.Status);
+
+        // Another tenant cannot reach the execution (404-equivalent at the service boundary).
+        var foreign = await orchestrator.ScheduleStepRetryAsync(execution.Id, stepExecution.Id, Guid.NewGuid());
+        Assert.Equal(StepRetryStatus.NotFound, foreign.Status);
+
+        // Unknown step execution under a real tenant is likewise not found, not scheduled.
+        var missing = await orchestrator.ScheduleStepRetryAsync(execution.Id, Guid.NewGuid(), tenantId);
+        Assert.Equal(StepRetryStatus.NotFound, missing.Status);
     }
 }

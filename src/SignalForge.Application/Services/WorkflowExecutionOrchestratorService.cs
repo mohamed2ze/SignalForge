@@ -4,11 +4,10 @@ using System.Text.Json.Nodes;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using SignalForge.Application.Data;
+using SignalForge.Application.Security;
 using SignalForge.Application.Services;
-using SignalForge.Domain.Enums;
 using SignalForge.Domain.Models;
 using SignalForge.Domain.ValueObjects;
 
@@ -20,13 +19,16 @@ namespace SignalForge.Application.Services
     public class WorkflowExecutionOrchestratorService : IWorkflowExecutionOrchestratorService
     {
         private readonly ISignalForgeDbContext _dbContext;
-        private readonly IServiceProvider _serviceProvider;
+        private readonly IStepProcessorRegistry _stepProcessors;
         private readonly ILogger<WorkflowExecutionOrchestratorService> _logger;
 
-        public WorkflowExecutionOrchestratorService(ISignalForgeDbContext dbContext, IServiceProvider serviceProvider, ILogger<WorkflowExecutionOrchestratorService> logger)
+        public WorkflowExecutionOrchestratorService(
+            ISignalForgeDbContext dbContext,
+            IStepProcessorRegistry stepProcessors,
+            ILogger<WorkflowExecutionOrchestratorService> logger)
         {
             _dbContext = dbContext;
-            _serviceProvider = serviceProvider;
+            _stepProcessors = stepProcessors;
             _logger = logger;
         }
 
@@ -186,8 +188,10 @@ namespace SignalForge.Application.Services
                 stepExecution.Start();
                 await _dbContext.SaveChangesAsync(cancellationToken);
 
-                // Get the appropriate step processor based on step type
-                var processor = GetStepProcessorForType(nextStep.StepType);
+                // Get the step processor for the step's type through the registry
+                // (the same registry approach the notification providers use).
+                var processor = _stepProcessors.Get(nextStep.StepType)
+                    ?? throw new NotSupportedException($"Step type {nextStep.StepType} is not supported");
 
                 // Build the runtime context (event payload + step outputs) used by conditional steps
                 var context = new StepExecutionContext(BuildStepContext(execution));
@@ -231,113 +235,99 @@ namespace SignalForge.Application.Services
                                stepExecution.Id, execution.Id);
                 if (!stepExecution.IsCompleted())
                 {
-                    stepExecution.Fail(ex.ToString());
+                    stepExecution.Fail(StorageText.ScrubForStorage(ex.ToString())!);
                     await _dbContext.SaveChangesAsync(cancellationToken);
                 }
 
-                // Check if we should retry
-                if (stepExecution.CanRetry())
-                {
-                    // Calculate next retry time with exponential backoff
-                    var retryDelaySeconds = Math.Pow(2, stepExecution.AttemptNumber); // 2^attemptNumber seconds
-                    var retryDelay = TimeSpan.FromSeconds(retryDelaySeconds);
-                    var nextRetryAt = DateTime.UtcNow.Add(retryDelay);
-
-                    // Mark step as retrying
-                    stepExecution.Retry(nextRetryAt);
-                    await _dbContext.SaveChangesAsync(cancellationToken);
-                    return true; // Should be retried
-                }
-                else
-                {
-                    // Max attempts reached, mark step as failed permanently
-                    // Check if all steps are completed
-                    var allStepsCompleted = execution.StepExecutions.All(se => se.IsCompleted());
-
-                    if (allStepsCompleted)
-                    {
-                        // All steps done, mark execution as failed
-                        execution.Fail("One or more steps failed after maximum retry attempts");
-                    }
-                    else
-                    {
-                        // Still have steps to process, but this step failed permanently
-                        execution.Fail($"Step {stepExecution.StepNumber} failed after maximum retry attempts");
-                    }
-
-                    await _dbContext.SaveChangesAsync(cancellationToken);
-                    return false; // Should not be retried
-                }
+                // One shared retry/backoff/dead-letter path drives both this catch and the
+                // HTTP retry endpoint, so a step exhausts attempts identically everywhere.
+                return await ScheduleRetryAndMaybeDeadLetterAsync(
+                    execution, stepExecution, nextStep.StepType, cancellationToken);
             }
 
             return true;
         }
 
-        /// <inheritdoc />
-        public async Task<bool> HandleStepExecutionFailureAsync(
-            Guid executionId,
-            Guid stepExecutionId,
-            CancellationToken cancellationToken = default)
+        /// <summary>
+        /// Shared retry/backoff/dead-letter decision for a failed step execution: when the step can
+        /// still retry, schedules an exponential-backoff retry (2^attempt seconds) and marks the
+        /// step <see cref="WorkflowStepExecutionStatus.Retrying"/>; otherwise fails the step, creates
+        /// exactly one dead-letter message, and fails the parent execution.
+        /// </summary>
+        /// <returns>True when the step should be retried, false once it is permanently failed.</returns>
+        private async Task<bool> ScheduleRetryAndMaybeDeadLetterAsync(
+            WorkflowExecution execution,
+            WorkflowStepExecution stepExecution,
+            string stepType,
+            CancellationToken cancellationToken)
         {
-            // Get the workflow execution
-            var execution = await _dbContext.WorkflowExecutions
-                .Include(e => e.StepExecutions)
-                .FirstOrDefaultAsync(e => e.Id == executionId, cancellationToken);
-
-            if (execution == null)
-            {
-                return false; // Execution not found
-            }
-
-            // Get the step execution
-            var stepExecution = execution.StepExecutions
-                .FirstOrDefault(se => se.Id == stepExecutionId);
-
-            if (stepExecution == null)
-            {
-                return false; // Step execution not found
-            }
-
-            // Check if the step can be retried
             if (stepExecution.CanRetry())
             {
-                // Calculate next retry time with exponential backoff
-                var retryDelaySeconds = Math.Pow(2, stepExecution.AttemptNumber); // 2^attemptNumber seconds
-                var retryDelay = TimeSpan.FromSeconds(retryDelaySeconds);
-                var nextRetryAt = DateTime.UtcNow.Add(retryDelay);
-
-                // Mark step as retrying
-                stepExecution.Retry(nextRetryAt);
-                await _dbContext.SaveChangesAsync(cancellationToken);
+                await ScheduleRetryAsync(stepExecution, cancellationToken);
                 return true; // Should be retried
             }
-            else
-            {
-                // Max attempts reached, mark step as failed and create dead letter
-                stepExecution.Fail(stepExecution.ErrorMessage ?? "Maximum retry attempts exceeded");
 
-                // Create dead letter message for failed step
-                var deadLetter = DeadLetterMessage.CreateFromFailedStep(stepExecution, execution);
-                _dbContext.DeadLetterMessages.Add(deadLetter);
+            // Max attempts reached: create the dead letter and fail the execution permanently.
+            _dbContext.DeadLetterMessages.Add(
+                DeadLetterMessage.CreateFromFailedStep(stepExecution, execution, stepType));
 
-                // Check if all steps are completed
-                var allStepsCompleted = execution.StepExecutions.All(se => se.IsCompleted());
+            var allStepsCompleted = execution.StepExecutions.All(se => se.IsCompleted());
+            execution.Fail(allStepsCompleted
+                ? "One or more steps failed after maximum retry attempts"
+                : $"Step {stepExecution.StepNumber} failed after maximum retry attempts");
 
-                if (allStepsCompleted)
-                {
-                    // All steps done, mark execution as failed
-                    execution.Fail("One or more steps failed after maximum retry attempts");
-                }
-                else
-                {
-                    // Still have steps to process, but this step failed permanently
-                    // In a more sophisticated implementation, we might have different failure handling strategies
-                    execution.Fail($"Step {stepExecution.StepNumber} failed after maximum retry attempts");
-                }
+            await _dbContext.SaveChangesAsync(cancellationToken);
+            return false; // Should not be retried
+        }
 
-                await _dbContext.SaveChangesAsync(cancellationToken);
-                return false; // Should not be retried
-            }
+        /// <summary>
+        /// Shared exponential-backoff retry used by both the advancement path and the HTTP retry
+        /// endpoint (L6): backoff is 2^attempt seconds, and the step moves to
+        /// <see cref="WorkflowStepExecutionStatus.Retrying"/> with the new <c>NextRetryAt</c>.
+        /// </summary>
+        private async Task ScheduleRetryAsync(
+            WorkflowStepExecution stepExecution,
+            CancellationToken cancellationToken)
+        {
+            var retryDelay = TimeSpan.FromSeconds(Math.Pow(2, stepExecution.AttemptNumber));
+            stepExecution.Retry(DateTime.UtcNow.Add(retryDelay));
+            await _dbContext.SaveChangesAsync(cancellationToken);
+        }
+
+        /// <inheritdoc />
+        public async Task<ScheduleStepRetryResult> ScheduleStepRetryAsync(
+            Guid executionId,
+            Guid stepExecutionId,
+            Guid tenantId,
+            CancellationToken cancellationToken = default)
+        {
+            var execution = await _dbContext.WorkflowExecutions
+                .Include(e => e.StepExecutions)
+                .FirstOrDefaultAsync(e => e.Id == executionId && e.TenantId == tenantId, cancellationToken);
+
+            if (execution is null)
+                return new ScheduleStepRetryResult(StepRetryStatus.NotFound, null);
+
+            var stepExecution = execution.StepExecutions.FirstOrDefault(se => se.Id == stepExecutionId);
+            if (stepExecution is null)
+                return new ScheduleStepRetryResult(StepRetryStatus.NotFound, null);
+
+            // In-flight, or a scheduled retry whose window isn't due yet, is owned by the worker —
+            // double-booking would race the advancement cycle.
+            if (stepExecution.Status == WorkflowStepExecutionStatus.Pending ||
+                stepExecution.Status == WorkflowStepExecutionStatus.Running ||
+                (stepExecution.Status == WorkflowStepExecutionStatus.Retrying &&
+                 !stepExecution.IsTimeToRetry()))
+                return new ScheduleStepRetryResult(StepRetryStatus.NotEligible, stepExecution);
+
+            // Succeeded/cancelled steps have nothing to retry; exhausted attempts cannot re-arm.
+            if (stepExecution.Status == WorkflowStepExecutionStatus.Succeeded ||
+                stepExecution.Status == WorkflowStepExecutionStatus.Cancelled ||
+                !stepExecution.CanRetry())
+                return new ScheduleStepRetryResult(StepRetryStatus.NotEligible, stepExecution);
+
+            await ScheduleRetryAsync(stepExecution, cancellationToken);
+            return new ScheduleStepRetryResult(StepRetryStatus.Scheduled, stepExecution);
         }
 
         /// <inheritdoc />
@@ -348,22 +338,6 @@ namespace SignalForge.Application.Services
             return await _dbContext.WorkflowExecutions
                 .Include(e => e.StepExecutions)
                 .FirstOrDefaultAsync(e => e.Id == executionId && e.TenantId == tenantId);
-        }
-
-        private IStepProcessor GetStepProcessorForType(string stepType)
-        {
-            // Get the appropriate step processor based on the step type
-            return stepType switch
-            {
-                nameof(StepType.HttpWebhook) => _serviceProvider.GetRequiredService<HttpWebhookStepProcessor>(),
-                nameof(StepType.Delay) => _serviceProvider.GetRequiredService<DelayStepProcessor>(),
-                nameof(StepType.Conditional) => _serviceProvider.GetRequiredService<ConditionalStepProcessor>(),
-                nameof(StepType.LogAudit) => _serviceProvider.GetRequiredService<LogAuditStepProcessor>(),
-                nameof(StepType.NotificationSimulation) => _serviceProvider.GetRequiredService<NotificationStepProcessor>(),
-                nameof(StepType.EventEmission) => _serviceProvider.GetRequiredService<EventEmissionStepProcessor>(),
-                nameof(StepType.RetryableOperation) => _serviceProvider.GetRequiredService<RetryableOperationStepProcessor>(),
-                _ => throw new NotSupportedException($"Step type {stepType} is not supported")
-            };
         }
 
         private static JsonObject BuildStepContext(WorkflowExecution execution)

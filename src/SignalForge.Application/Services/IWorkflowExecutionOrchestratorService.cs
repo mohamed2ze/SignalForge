@@ -34,23 +34,28 @@ namespace SignalForge.Application.Services
         Task<bool> AdvanceWorkflowExecutionAsync(Guid executionId, CancellationToken cancellationToken = default);
 
         /// <summary>
-        /// Handles a failed step execution by retrying or marking as failed.
-        /// </summary>
-        /// <param name="executionId">The workflow execution ID</param>
-        /// <param name="stepExecutionId">The step execution ID that failed</param>
-        /// <param name="cancellationToken">Cancellation token</param>
-        /// <returns>True if the execution should be retried, false if it should be marked as failed</returns>
-        Task<bool> HandleStepExecutionFailureAsync(
-            Guid executionId,
-            Guid stepExecutionId,
-            CancellationToken cancellationToken = default);
-
-        /// <summary>
         /// Gets a workflow execution by ID for a specific tenant.
         /// </summary>
         /// <param name="executionId">The workflow execution ID</param>
         /// <param name="tenantId">The tenant ID</param>
         /// <returns>The workflow execution if found and belongs to the tenant, otherwise null</returns>
         Task<WorkflowExecution?> GetWorkflowExecutionByIdAsync(Guid executionId, Guid tenantId);
+
+        /// <summary>
+        /// Schedules an immediate retry of a failed step execution within the tenant's execution,
+        /// applying the same exponential-backoff policy the worker uses so the retry is picked up on
+        /// the next advancement cycle. The step must exist, belong to the tenant, and be eligible
+        /// (failed and not exhausted) for a retry to be scheduled.
+        /// </summary>
+        /// <param name="executionId">The workflow execution ID</param>
+        /// <param name="stepExecutionId">The step execution ID to retry</param>
+        /// <param name="tenantId">The tenant ID</param>
+        /// <param name="cancellationToken">Cancellation token</param>
+        /// <returns>The scheduling outcome, with the updated step execution when scheduled</returns>
+        Task<ScheduleStepRetryResult> ScheduleStepRetryAsync(
+            Guid executionId,
+            Guid stepExecutionId,
+            Guid tenantId,
+            CancellationToken cancellationToken = default);
     }
 }

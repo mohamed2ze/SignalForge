@@ -407,17 +407,19 @@ public class WorkflowsController : ControllerBase
     }
 
     /// <summary>
-    /// Retries a failed workflow step execution.
+    /// Retries a failed workflow step execution: re-schedules the step with the same exponential
+    /// backoff the worker uses, returning the updated step execution state.
     /// </summary>
     /// <param name="executionId">The workflow execution ID</param>
     /// <param name="stepExecutionId">The step execution ID</param>
-    /// <returns>True if the step execution was retried, false otherwise</returns>
+    /// <returns>The updated step execution when the retry was scheduled</returns>
     [HttpPost("{executionId:guid}/steps/{stepExecutionId:guid}/retry")]
-    [ProducesResponseType(typeof(bool), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(WorkflowStepExecutionDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status401Unauthorized)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
-    public async Task<ActionResult<bool>> RetryStepExecution(
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
+    public async Task<ActionResult<WorkflowStepExecutionDto>> RetryStepExecution(
         Guid executionId,
         Guid stepExecutionId)
     {
@@ -426,14 +428,30 @@ public class WorkflowsController : ControllerBase
             if (!this.TryGetTenantId(out var tenantId))
                 return Unauthorized(TenantProblem());
 
-            // In a real implementation, we would check if the step is eligible for retry
-            // For now, we'll return false as this would require more complex orchestration
-            return BadRequest(new ProblemDetails
+            var result = await _workflowOrchestrator.ScheduleStepRetryAsync(
+                executionId, stepExecutionId, tenantId);
+
+            if (result.Status == StepRetryStatus.NotFound)
             {
-                Title = "Retry not implemented via API",
-                Status = StatusCodes.Status400BadRequest,
-                Detail = "Step retry functionality is handled automatically by the workflow engine"
-            });
+                return NotFound(new ProblemDetails
+                {
+                    Title = "Workflow step execution not found",
+                    Status = StatusCodes.Status404NotFound,
+                    Detail = $"Workflow step execution with ID {stepExecutionId} not found for this tenant"
+                });
+            }
+
+            if (result.Status != StepRetryStatus.Scheduled)
+            {
+                return Conflict(new ProblemDetails
+                {
+                    Title = "Step execution cannot be retried",
+                    Status = StatusCodes.Status409Conflict,
+                    Detail = "The step execution is currently running, waiting for its retry window, or has exhausted its attempts"
+                });
+            }
+
+            return Ok(WorkflowStepExecutionDto.FromDomain(result.StepExecution!));
         }
         catch (Exception ex)
         {
