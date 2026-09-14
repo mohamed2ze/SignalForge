@@ -135,7 +135,7 @@ public class DeadLetterProcessingService : IDeadLetterProcessingService
         {
             await _dbContext.SaveChangesAsync(cancellationToken);
         }
-        catch (DbUpdateException ex) when (IsUniqueViolation(ex))
+        catch (DbUpdateException ex) when (UniqueKeyViolation.IsUniqueViolation(ex))
         {
             // Two concurrent replays of the same dead letter both passed the in-flight check
             // above; the filtered unique index let only one requeue through. The
@@ -148,16 +148,6 @@ public class DeadLetterProcessingService : IDeadLetterProcessingService
         }
 
         return new DeadLetterReplayResult(DeadLetterReplayStatus.Replayed, deadLetter);
-    }
-
-    private static bool IsUniqueViolation(DbUpdateException ex)
-    {
-        if (ex.InnerException is not System.Data.Common.DbException dbException ||
-            dbException.SqlState is null)
-            return false;
-
-        // SQL Server: 2601/2627 = unique index / primary key. Postgres: 23505.
-        return dbException.SqlState is "2601" or "2627" or "23505";
     }
 
     /// <inheritdoc />

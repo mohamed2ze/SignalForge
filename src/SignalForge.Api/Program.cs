@@ -4,9 +4,8 @@ using Microsoft.EntityFrameworkCore;
 using SignalForge.Api.Health;
 using SignalForge.Api.Middleware;
 using SignalForge.Application;
-using SignalForge.Application.Broker;
 using SignalForge.Application.Data;
-using SignalForge.Infrastructure.Broker;
+using SignalForge.Application.Security;
 using SignalForge.Infrastructure.Data;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -28,16 +27,13 @@ if (builder.Configuration.GetValue<bool>("Logging:Console:Json", false))
 // Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
 builder.Services.AddOpenApi();
 
-// Register API controllers (Events, Workflows, DeadLetter, TestAuth)
+// Register API controllers (Events, Workflows, DeadLetter)
 builder.Services.AddControllers();
 
 // Health checks (no extra package needed): /health/live = liveness (process serves requests),
 // /health/ready = readiness (database reachable). See the MapHealthChecks calls below.
 builder.Services.AddHealthChecks()
     .AddCheck<DatabaseHealthCheck>("database");
-
-// Add HttpClient for webhook steps
-builder.Services.AddHttpClient();
 
 // Add SignalForge DbContext with SQL Server connection
 builder.Services.AddDbContext<SignalForgeDbContext>(options =>
@@ -62,18 +58,21 @@ builder.Services.AddScoped<ISignalForgeDbContext, SignalForgeDbContext>();
 // Add application services
 builder.Services.AddApplicationServices();
 
-// Register the in-memory message broker as the Development default (singleton, it is the
-// transport store). Swap this registration for a real adapter (Kafka/RabbitMQ/HTTP) later.
-builder.Services.AddSingleton<InMemoryMessageBroker>();
-builder.Services.AddSingleton<IMessageBroker>(sp => sp.GetRequiredService<InMemoryMessageBroker>());
-builder.Services.AddSingleton<IBrokerAudit>(sp => sp.GetRequiredService<InMemoryMessageBroker>());
+// Outbound webhook SSRF/timeout/size settings (defaults are strict; override per environment).
+builder.Services.AddOptions<OutboundWebhookOptions>()
+    .Bind(builder.Configuration.GetSection("OutboundWebhook"));
 
 // Add authentication services
 builder.Services.AddAuthentication(ApiKeyAuthenticationDefaults.AuthenticationScheme)
     .AddApiKeyAuthentication();
 
-// Add authorization services
+// Authorization lets rate limiting read the api_key_id claim populated by authentication below.
 builder.Services.AddAuthorization();
+
+// Options for the API-key-scoped rate limiter (see ApiKeyRateLimitMiddleware). Defaults are a
+// generous 1000 req/min per API key; tighten via "RateLimiting:PermitLimit".
+builder.Services.Configure<ApiKeyRateLimitOptions>(
+    builder.Configuration.GetSection(ApiKeyRateLimitOptions.SectionName));
 
 var app = builder.Build();
 
@@ -102,7 +101,11 @@ app.UseMiddleware<EventsSignatureMiddleware>();
 
 app.UseAuthorization();
 
-// Route API controllers (Events, Workflows, DeadLetter, TestAuth)
+// API-key rate limiting reads the api_key_id claim populated by UseAuthentication, so it runs
+// after authentication/authorization and before endpoint dispatch. Health probes are exempt.
+app.UseMiddleware<ApiKeyRateLimitMiddleware>();
+
+// Route API controllers (Events, Workflows, DeadLetter)
 app.MapControllers();
 
 // Liveness: no checks registered (predicate => false), so it only reports whether the API

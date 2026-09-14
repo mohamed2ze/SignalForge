@@ -88,6 +88,10 @@ public sealed class ExecutionsController : ControllerBase
     /// <summary>
     /// Server-side aggregates for the caller's tenant: status counts, step latency by step type,
     /// and failure/retry summary — all within the optional workflow/time window.
+    /// Step-level detail is sampled deterministically to bound memory: at most 50,000 of the most
+    /// recent in-window step tuples (by execution start, descending) are aggregated, so under very
+    /// heavy windows the latency/retry numbers describe the most recent activity rather than the
+    /// full window.
     /// </summary>
     [HttpGet("aggregates")]
     [ProducesResponseType(typeof(ExecutionAggregates), StatusCodes.Status200OK)]

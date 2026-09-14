@@ -14,16 +14,34 @@ namespace SignalForge.Application.Services;
 /// against the execution <see cref="WorkflowExecution.StartedAt"/>; step latency/failure details
 /// are projected to scalar tuples in SQL and aggregated post-projection, which keeps the queries
 /// portable across EF providers while still returning fully aggregated dashboard contracts.
+/// <para>
+/// To bound memory on tenanted databases with heavy step activity, the step-tuple projections in
+/// <see cref="GetAggregatesAsync"/> are sampled deterministically: at most
+/// <see cref="ExecutionObservabilityService.MaxAggregateStepTuples"/> most-recent tuples (ordered
+/// by execution <see cref="WorkflowExecution.StartedAt"/> descending) are aggregated per call. When
+/// the window exceeds the cap, aggregates describe the most recent activity, not the full window.
+/// </para>
 /// </summary>
 public class ExecutionObservabilityService : IExecutionObservabilityService
 {
+    /// <summary>Upper bound on step tuples materialized per aggregates call.</summary>
+    public const int MaxAggregateStepTuples = 50_000;
+
     private const int MaxFailureCauses = 10;
 
     private readonly ISignalForgeDbContext _dbContext;
+    private readonly int _maxAggregateStepTuples;
 
-    public ExecutionObservabilityService(ISignalForgeDbContext dbContext)
+    /// <summary>
+    /// Creates the service. <paramref name="maxAggregateStepTuples"/> is injectable to keep the
+    /// sampling contract unit-testable with a small budget; production uses the 50k default.
+    /// </summary>
+    public ExecutionObservabilityService(
+        ISignalForgeDbContext dbContext,
+        int maxAggregateStepTuples = MaxAggregateStepTuples)
     {
         _dbContext = dbContext;
+        _maxAggregateStepTuples = maxAggregateStepTuples;
     }
 
     /// <inheritdoc />
@@ -99,11 +117,15 @@ public class ExecutionObservabilityService : IExecutionObservabilityService
 
         // Step latency: completed steps of in-window executions, aggregated post-projection so the
         // query stays provider-portable (TimeSpan Min/Average/Max are not reliably translatable).
+        // Bounded: only the _maxAggregateStepTuples most-recent tuples (execution StartedAt
+        // descending) are materialized, so a large window cannot exhaust memory.
         var stepTuples = await (from e in executions
                                 from se in e.StepExecutions
                                 where se.Status == WorkflowStepExecutionStatus.Succeeded &&
                                       se.CompletedAt != null
+                                orderby e.StartedAt descending
                                 select new { se.WorkflowStep.StepType, se.StartedAt, se.CompletedAt })
+            .Take(_maxAggregateStepTuples)
             .ToListAsync(cancellationToken);
 
         var latency = stepTuples
@@ -123,10 +145,12 @@ public class ExecutionObservabilityService : IExecutionObservabilityService
             .OrderBy(a => a.StepType)
             .ToList();
 
-        // Step retries + failure causes, likewise projected then grouped.
+        // Step retries + failure causes, likewise projected then grouped (and sampled the same way).
         var stepExecutions = await (from e in executions
                                     from se in e.StepExecutions
+                                    orderby e.StartedAt descending
                                     select new { se.AttemptNumber, se.ErrorMessage, se.Status })
+            .Take(_maxAggregateStepTuples)
             .ToListAsync(cancellationToken);
 
         var totalStepRetries = stepExecutions.Count(se => se.AttemptNumber > 1);
