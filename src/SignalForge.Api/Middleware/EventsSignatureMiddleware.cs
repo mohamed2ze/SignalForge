@@ -17,6 +17,10 @@ namespace SignalForge.Api.Middleware;
 /// </summary>
 public class EventsSignatureMiddleware
 {
+    /// <summary>HttpContext.Items key under which the authenticated tenant's webhook signing secret
+    /// is stashed by <see cref="ApiKeyAuthenticationHandler"/> during API-key validation.</summary>
+    public const string SigningSecretContextItem = "SignalForge.TenantWebhookSigningSecret";
+
     private readonly RequestDelegate _next;
     private readonly ILogger<EventsSignatureMiddleware> _logger;
 
@@ -80,10 +84,19 @@ public class EventsSignatureMiddleware
         }
         request.Body.Position = 0;
 
-        var signingSetting = await dbContext.TenantWebhookSigningSettings
-            .FirstOrDefaultAsync(s => s.TenantId == tenantId, context.RequestAborted);
+        // The authentication handler already resolved the tenant's signing secret during API-key
+        // validation; prefer that item over a second per-request DB round-trip. Fall back to the
+        // direct read only when the value isn't present (defensive; auth always precedes this).
+        var signingSecret = context.Items.TryGetValue(SigningSecretContextItem, out var item)
+            ? item as string
+            : null;
 
-        if (signingSetting is null)
+        var signingSetting = signingSecret is null
+            ? await dbContext.TenantWebhookSigningSettings
+                .FirstOrDefaultAsync(s => s.TenantId == tenantId, context.RequestAborted)
+            : null;
+
+        if (signingSecret is null && signingSetting is null)
         {
             _logger.LogWarning(
                 "Event POST rejected for tenant {TenantId}: no webhook signing secret configured",
@@ -94,7 +107,7 @@ public class EventsSignatureMiddleware
 
         var signatureHeader = signatureValue.ToString();
         var valid = EventSignatureVerifier.Verify(
-            signingSetting.SigningSecret,
+            signingSecret ?? signingSetting!.SigningSecret,
             timestampUnixSeconds,
             rawBody,
             signatureHeader);

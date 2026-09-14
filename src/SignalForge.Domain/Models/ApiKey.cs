@@ -1,5 +1,4 @@
-using System.Security.Cryptography;
-using System.Text;
+using SignalForge.Domain.Security;
 
 namespace SignalForge.Domain.Models;
 
@@ -53,10 +52,8 @@ public class ApiKey
         if (string.IsNullOrWhiteSpace(plainTextKey))
             throw new ArgumentException("API key cannot be empty", nameof(plainTextKey));
 
-        // Hash the API key for storage
-        var keyBytes = Encoding.UTF8.GetBytes(plainTextKey);
-        var hashBytes = SHA256.HashData(keyBytes);
-        var keyHash = Convert.ToBase64String(hashBytes);
+        // Hash the API key for storage with a salted KDF (versioned PBKDF2), never bare SHA-256.
+        var keyHash = ApiKeyHasher.Hash(plainTextKey);
 
         // Extract prefix for identification (first 8 characters)
         var keyPrefix = plainTextKey.Length >= 8 ? plainTextKey.Substring(0, 8) : plainTextKey;
@@ -70,22 +67,29 @@ public class ApiKey
     }
 
     /// <summary>
-    /// Verifies if the provided plain-text key matches the stored hash.
+    /// Verifies if the provided plain-text key matches the stored hash. Supports both the current
+    /// versioned PBKDF2 format and legacy bare SHA-256 hashes.
     /// </summary>
     /// <param name="plainTextKey">The plain-text API key to verify</param>
     /// <returns>True if the key matches, false otherwise</returns>
     public bool VerifyKey(string plainTextKey)
+        => ApiKeyHasher.Verify(plainTextKey, KeyHash);
+
+    /// <summary>True when the stored hash predates the salted-format rollout and should be
+    /// re-hashed after a successful verification.</summary>
+    public bool RequiresKeyHashMigration => !ApiKeyHasher.IsVersionedHash(KeyHash);
+
+    /// <summary>
+    /// Re-hashes the key with the current salted format after a successful legacy verification so
+    /// the upgrade is transparent to the tenant.
+    /// </summary>
+    public void RehashKey(string plainTextKey)
     {
-        if (string.IsNullOrWhiteSpace(plainTextKey))
-            return false;
+        if (!RequiresKeyHashMigration)
+            throw new InvalidOperationException("Key hash already uses the current format");
 
-        var keyBytes = Encoding.UTF8.GetBytes(plainTextKey);
-        var hashBytes = SHA256.HashData(keyBytes);
-        var computedHash = Convert.ToBase64String(hashBytes);
-
-        return CryptographicOperations.FixedTimeEquals(
-            Encoding.UTF8.GetBytes(KeyHash),
-            Encoding.UTF8.GetBytes(computedHash));
+        KeyHash = ApiKeyHasher.Hash(plainTextKey);
+        UpdatedAt = DateTime.UtcNow;
     }
 
     /// <summary>

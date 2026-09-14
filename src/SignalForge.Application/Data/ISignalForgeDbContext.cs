@@ -1,4 +1,6 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.ChangeTracking;
+using Microsoft.EntityFrameworkCore.Infrastructure;
 using SignalForge.Domain.Models;
 
 namespace SignalForge.Application.Data;
@@ -8,6 +10,11 @@ namespace SignalForge.Application.Data;
 /// </summary>
 public interface ISignalForgeDbContext
 {
+    DatabaseFacade Database { get; }
+
+    /// <summary>Gets the change-tracker entry for <paramref name="entity"/> (see <see cref="DbContext.Entry(object)"/>).</summary>
+    EntityEntry Entry(object entity);
+
     DbSet<Tenant> Tenants { get; }
     DbSet<ApiKey> ApiKeys { get; }
     DbSet<Event> Events { get; }

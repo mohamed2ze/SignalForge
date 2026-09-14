@@ -63,6 +63,12 @@ public class ApiKeyAuthenticationHandler : AuthenticationHandler<ApiKeyAuthentic
             var principal = new ClaimsPrincipal(identity);
             var ticket = new AuthenticationTicket(principal, Scheme.Name);
 
+            // Surface the tenant's webhook signing secret to the events pipeline without another
+            // DB round-trip. It is sensitive, so it travels only via the ephemeral HttpContext item.
+            if (!string.IsNullOrEmpty(validationResult.TenantWebhookSigningSecret))
+                Context.Items[EventsSignatureMiddleware.SigningSecretContextItem] =
+                    validationResult.TenantWebhookSigningSecret;
+
             return AuthenticateResult.Success(ticket);
         }
         catch (Exception ex)

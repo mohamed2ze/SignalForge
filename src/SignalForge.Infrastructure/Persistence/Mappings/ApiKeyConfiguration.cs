@@ -23,7 +23,7 @@ public class ApiKeyConfiguration : IEntityTypeConfiguration<ApiKey>
 
         builder.Property(ak => ak.KeyHash)
             .IsRequired()
-            .HasMaxLength(445); // Base64 encoded SHA-256 hash is 444 chars max
+            .HasMaxLength(512); // Versioned PBKDF2 hash ("$pbkdf2-sha256$..." ~85 chars) or legacy base64 SHA-256
 
         builder.Property(ak => ak.KeyPrefix)
             .HasMaxLength(20);

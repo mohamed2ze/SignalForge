@@ -89,4 +89,59 @@ public class ApiKeyValidationServiceTests
 
         Assert.False(result.IsValid);
     }
+
+    [Fact]
+    public async Task Valid_key_resolves_the_webhook_signing_secret_for_the_tenant()
+    {
+        var db = CreateDb();
+        var tenantId = Guid.NewGuid();
+        db.Tenants.Add(Tenant.CreateWithId(tenantId, "key-signing-test"));
+        db.TenantWebhookSigningSettings.Add(TenantWebhookSigningSetting.Create(tenantId, "sf-secret-123"));
+        db.ApiKeys.Add(ApiKey.Create(tenantId, "webhook", ValidKey));
+        await db.SaveChangesAsync();
+
+        var service = new ApiKeyValidationService(db);
+        var result = await service.ValidateApiKeyAsync(ValidKey);
+
+        Assert.True(result.IsValid);
+        Assert.Equal("sf-secret-123", result.TenantWebhookSigningSecret);
+    }
+
+    [Fact]
+    public async Task Valid_key_without_a_signing_setting_exposes_no_secret()
+    {
+        var (service, _) = await CreateAsync();
+
+        var result = await service.ValidateApiKeyAsync(ValidKey);
+
+        Assert.True(result.IsValid);
+        Assert.Null(result.TenantWebhookSigningSecret);
+    }
+
+    [Fact]
+    public async Task Legacy_unsalted_hash_is_upgraded_in_place_after_successful_validation()
+    {
+        var db = CreateDb();
+        var tenantId = Guid.NewGuid();
+        db.Tenants.Add(Tenant.CreateWithId(tenantId, "key-test"));
+        var apiKey = ApiKey.Create(tenantId, "webhook", ValidKey);
+        var legacyHash = Convert.ToBase64String(
+            System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(ValidKey)));
+        typeof(ApiKey).GetProperty(nameof(ApiKey.KeyHash))!.GetSetMethod(nonPublic: true)!
+            .Invoke(apiKey, new object[] { legacyHash });
+        db.ApiKeys.Add(apiKey);
+        await db.SaveChangesAsync();
+
+        var service = new ApiKeyValidationService(db);
+        var result = await service.ValidateApiKeyAsync(ValidKey);
+
+        Assert.True(result.IsValid);
+        Assert.False(apiKey.RequiresKeyHashMigration);
+        Assert.StartsWith("$pbkdf2-sha256$", apiKey.KeyHash);
+
+        // Re-query the tracked entity to confirm the upgraded hash was persisted.
+        var reloaded = await db.ApiKeys.SingleAsync();
+        Assert.StartsWith("$pbkdf2-sha256$", reloaded.KeyHash);
+        Assert.True(reloaded.VerifyKey(ValidKey));
+    }
 }
