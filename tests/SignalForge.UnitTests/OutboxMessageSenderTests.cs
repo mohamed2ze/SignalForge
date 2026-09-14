@@ -22,16 +22,15 @@ public class OutboxMessageSenderTests
     }
 
     [Fact]
-    public async Task TestFail_Message_Throws_Before_Touching_Broker()
+    public async Task TestFail_Type_Is_No_Longer_Rejected_By_The_Sender()
     {
         var broker = new FakeBroker { Result = true };
         var sender = new OutboxMessageSender(broker, NullLogger<OutboxMessageSender>.Instance);
 
-        var ex = await Assert.ThrowsAsync<InvalidOperationException>(
-            () => sender.SendAsync("Test/Fail", "{}"));
+        await sender.SendAsync("Test/Fail", "{}");
 
-        Assert.Contains("Simulated send failure", ex.Message);
-        Assert.Equal(0, broker.CallCount);
+        Assert.Equal(1, broker.CallCount);
+        Assert.Equal("Test/Fail", broker.LastType);
     }
 
     [Fact]

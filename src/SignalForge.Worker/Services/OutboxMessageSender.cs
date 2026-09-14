@@ -23,13 +23,6 @@ namespace SignalForge.Worker.Services
         /// <inheritdoc />
         public async Task SendAsync(string type, string payload, CancellationToken cancellationToken = default)
         {
-            // Test seam: any message of type "Test/Fail" is rejected, letting the failure
-            // (backoff / dead-letter) path be exercised without depending on broker behavior.
-            if (type == "Test/Fail")
-            {
-                throw new InvalidOperationException($"Simulated send failure for message type '{type}'");
-            }
-
             bool published = await _broker.PublishAsync(type, payload, cancellationToken);
             if (!published)
             {

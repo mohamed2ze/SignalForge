@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
+using SignalForge.Application.Broker;
 using SignalForge.Application.Data;
 using SignalForge.Domain.Models;
 using SignalForge.Infrastructure.Broker;
@@ -262,7 +263,7 @@ public sealed class DeadLetterReplayTests : ApiTestBase
         services.AddScoped<ISignalForgeDbContext>(_ => new SignalForgeDbContext(DbOptions()));
         services.AddScoped<IOutboxMessageSender>(_ =>
             new OutboxMessageSender(
-                new InMemoryMessageBroker(),
+                new TestFailRejectingBroker(),
                 NullLogger<OutboxMessageSender>.Instance));
 
         var provider = services.BuildServiceProvider();
@@ -277,6 +278,23 @@ public sealed class DeadLetterReplayTests : ApiTestBase
                 MaxBackoffSeconds = 300
             }),
             NullLogger<OutboxProcessor>.Instance);
+    }
+
+    /// <summary>
+    /// Broker double that rejects every publish, driving the "Test/Fail" failure path: the
+    /// outbox worker sees a rejected send, retries with backoff, then dead-letters the requeue.
+    /// The real <see cref="InMemoryMessageBroker"/> accepts any non-empty type, so it cannot
+    /// substitute here.
+    /// </summary>
+    private sealed class TestFailRejectingBroker : IMessageBroker
+    {
+        public int CallCount { get; private set; }
+
+        public Task<bool> PublishAsync(string type, string payload, CancellationToken cancellationToken = default)
+        {
+            CallCount++;
+            return Task.FromResult(false);
+        }
     }
 
     // Collapses the per-message retry gate for a dead letter's in-flight requeue so the next

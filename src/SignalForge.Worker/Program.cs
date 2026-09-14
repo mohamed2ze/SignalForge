@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using SignalForge.Application;
 using SignalForge.Application.Broker;
 using SignalForge.Application.Data;
+using SignalForge.Application.Security;
 using SignalForge.Application.Services;
 using SignalForge.Domain;
 using SignalForge.Infrastructure.Broker;
@@ -39,6 +40,10 @@ builder.Services.AddScoped<ISignalForgeDbContext, SignalForgeDbContext>();
 // Add application services: workflow orchestration + step processors (needed by the execution
 // pump's per-cycle scope) and the notification providers.
 builder.Services.AddApplicationServices();
+
+// Outbound webhook SSRF/timeout/size settings (defaults are strict; override per environment).
+builder.Services.AddOptions<OutboundWebhookOptions>()
+    .Bind(builder.Configuration.GetSection("OutboundWebhook"));
 
 // Add outbox processing services.
 // The processor is a singleton: it owns poll pacing / circuit-breaker state across cycles

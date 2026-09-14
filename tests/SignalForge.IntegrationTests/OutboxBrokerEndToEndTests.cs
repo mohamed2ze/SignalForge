@@ -110,7 +110,7 @@ public class OutboxBrokerEndToEndTests : ApiTestBase
                 await new OutboxPublisher(ctx).PublishAsync(TenantId, "Test/Fail", "{\"boom\":true}");
             }
 
-            var broker = new InMemoryMessageBroker();
+            var broker = new TestFailRejectingBroker();
             var sender = new OutboxMessageSender(broker, NullLogger<OutboxMessageSender>.Instance);
             var processor = CreateProcessor(options, sender, new OutboxOptions
             {
@@ -131,8 +131,8 @@ public class OutboxBrokerEndToEndTests : ApiTestBase
                     await MakeRetryDueAsync(options);
             }
 
-            // Nothing reached the broker (the Test/Fail seam throws before publishing).
-            Assert.Empty(broker.GetAll());
+            // Every attempt hit the broker, which rejected all of them — nothing was published.
+            Assert.Equal(3, broker.CallCount);
 
             using (var verify = new SignalForgeDbContext(options))
             {
@@ -163,5 +163,21 @@ public class OutboxBrokerEndToEndTests : ApiTestBase
         var message = await ctx.OutboxMessages.Where(m => m.TenantId == TenantId).SingleAsync();
         ctx.Entry(message).Property(m => m.NextRetryAt).CurrentValue = DateTime.UtcNow.AddSeconds(-1);
         await ctx.SaveChangesAsync();
+    }
+
+    /// <summary>
+    /// Broker double that rejects every publish, driving the "Test/Fail" failure path: the worker
+    /// sees a rejected send, retries with backoff, then dead-letters. The real
+    /// <see cref="InMemoryMessageBroker"/> accepts any non-empty type, so it cannot substitute.
+    /// </summary>
+    private sealed class TestFailRejectingBroker : IMessageBroker
+    {
+        public int CallCount { get; private set; }
+
+        public Task<bool> PublishAsync(string type, string payload, CancellationToken cancellationToken = default)
+        {
+            CallCount++;
+            return Task.FromResult(false);
+        }
     }
 }
