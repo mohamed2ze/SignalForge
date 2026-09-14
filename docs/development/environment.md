@@ -24,6 +24,11 @@ Connection string format for local development:
 ```
 Server=localhost,1433;Database=SignalForge;User Id=sa;Password=<your-sa-password>;TrustServerCertificate=True;
 ```
+Local dev may use `sa`. The compose stack deliberately does NOT: a `db-init` one-shot service runs
+an idempotent bootstrap (`mssql/init/01-create-app-login.sh`) that creates a least-privilege
+`signalforge_app` login (db_owner of the `SignalForge` DB), and the API + worker connect as that
+login (`User Id=signalforge_app;Password=<APP_DB_PASSWORD from .env>`) so the SA password never
+leaves the bootstrap script.
 
 ### Setting it via user-secrets (local, recommended)
 
@@ -77,7 +82,7 @@ gitignored `.env` file (template: `.env.example`) and are injected as container 
 secret is committed:
 
 ```bash
-cp .env.example .env        # fill in MSSQL_SA_PASSWORD + SEED_API_KEY
+cp .env.example .env        # fill in MSSQL_SA_PASSWORD + APP_DB_PASSWORD + SEED_API_KEY
 docker compose up -d --build
 ```
 

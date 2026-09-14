@@ -6,12 +6,15 @@ runs the API and worker natively against your own SQL Server container.
 ## Option A — Docker Compose (full stack, one command)
 
 Everything (SQL Server 2022 + API + outbox worker) in one stack. The API auto-migrates and seeds
-the database at startup.
+the database at startup. A `db-init` one-shot service (gated before the API/worker) runs the
+idempotent bootstrap (`mssql/init/01-create-app-login.sh`), which creates a least-privilege
+`signalforge_app` login (db_owner of the `SignalForge` DB); the API/worker connect with it — the
+SA login is only used by that bootstrap and the healthcheck.
 
 ```bash
 # 1. Provide secrets once (template is committed; .env is gitignored)
 cp .env.example .env
-#    -> edit MSSQL_SA_PASSWORD, SEED_API_KEY, SEED_SIGNING_SECRET as needed
+#    -> edit MSSQL_SA_PASSWORD, APP_DB_PASSWORD, SEED_API_KEY, SEED_SIGNING_SECRET as needed
 
 # 2. Start the stack
 docker compose up -d --build
@@ -107,6 +110,10 @@ worker console).
 
 ## Known gotchas
 
+- **Least-privilege login on pre-existing volumes.** The `db-init` bootstrap is idempotent and runs
+  on every `docker compose up`, so an existing compose volume gains `signalforge_app` automatically
+  on the next up. Because the API waits for `db-init` (`service_completed_successfully`), there is
+  no startup race between the bootstrap and the app's first connection.
 - **Stale seeded API key.** The seeder is idempotent and keeps an existing key, so a new
   `Seed:DefaultApiKey` is ignored on a database that was already seeded. Either wipe the database
   (`docker compose down -v`) or point the stored hash at your key.

@@ -99,7 +99,13 @@ public static class DatabaseSeeder
     private static string GenerateRandomToken(int length)
     {
         const string chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
-        var bytes = RandomNumberGenerator.GetBytes(length);
-        return new string(bytes.Select(b => chars[b % chars.Length]).ToArray());
+        var buffer = new char[length];
+        for (var i = 0; i < buffer.Length; i++)
+        {
+            // GetInt32 is rejection-sampling on the CSPRNG: unbiased across the full charset,
+            // unlike the previous mod-62 reduction over a 256-alphabet byte.
+            buffer[i] = chars[RandomNumberGenerator.GetInt32(chars.Length)];
+        }
+        return new string(buffer);
     }
 }

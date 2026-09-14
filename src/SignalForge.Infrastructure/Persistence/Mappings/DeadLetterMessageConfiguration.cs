@@ -28,9 +28,11 @@ public class DeadLetterMessageConfiguration : IEntityTypeConfiguration<DeadLette
             .IsRequired()
             .HasMaxLength(200);
 
+        // ErrorMessage is nvarchar(max): final error text can exceed 2000 chars, and the fixed cap used
+        // to throw "String or binary data would be truncated". Bound at write time via
+        // StorageText.TruncateForStorage.
         builder.Property(dlm => dlm.ErrorMessage)
-            .IsRequired()
-            .HasMaxLength(2000);
+            .IsRequired();
 
         builder.Property(dlm => dlm.FinalAttemptCount)
             .IsRequired();

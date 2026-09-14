@@ -39,11 +39,19 @@ public class WorkflowStepExecutionConfiguration : IEntityTypeConfiguration<Workf
         builder.Property(wse => wse.NextRetryAt)
             .IsRequired(false);
 
+        // Error/Output are nvarchar(max): webhook responses and error text can legitimately exceed
+        // 2000 chars, and a fixed cap used to throw "String or binary data would be truncated".
+        // Write sites bound the size via StorageText.TruncateForStorage before persisting.
         builder.Property(wse => wse.ErrorMessage)
-            .HasMaxLength(2000);
+            .IsRequired(false);
 
         builder.Property(wse => wse.Output)
-            .HasMaxLength(2000);
+            .IsRequired(false);
+
+        // Worker pump subquery looks up step executions by (execution, next step number) and
+        // filters on status to decide whether the next step is already in flight.
+        builder.HasIndex(wse => new { wse.WorkflowExecutionId, wse.StepNumber, wse.Status })
+            .HasDatabaseName("IX_WorkflowStepExecutions_Execution_Step_Status");
 
         // Navigation properties
         builder.HasOne(wse => wse.WorkflowExecution)

@@ -61,7 +61,7 @@ dotnet tool restore
 dotnet user-secrets set --project src/SignalForge.Api "ConnectionStrings:SignalForgeConnection" "<value>"
 dotnet user-secrets set --project src/SignalForge.Worker "ConnectionStrings:SignalForgeConnection" "<value>"
 #    (format: Server=localhost,1433;Database=SignalForge;User Id=sa;Password=<pwd>;TrustServerCertificate=True;
-#     see docs/development/environment.md)
+#     the compose stack instead connects as the least-privilege signalforge_app login — see RUNNING.md
 
 # 4. Apply the database migration
 dotnet ef database update --project src/SignalForge.Infrastructure --startup-project src/SignalForge.Api

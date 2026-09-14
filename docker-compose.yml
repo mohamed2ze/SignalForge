@@ -14,10 +14,15 @@ services:
       MSSQL_PID: Developer
       MSSQL_MEMORY_LIMIT_MB: 1024
       MSSQL_SA_PASSWORD: ${MSSQL_SA_PASSWORD:?set MSSQL_SA_PASSWORD in .env}
+      # Only consumed by the startup bootstrap; the app never uses the SA login.
+      APP_DB_PASSWORD: ${APP_DB_PASSWORD:?set APP_DB_PASSWORD in .env}
     ports:
       - "14333:1433"
     volumes:
       - mssql-data:/var/opt/mssql
+      # NOTE: the mssql image does not auto-run scripts in /docker-entrypoint-initdb.d.
+      # Least-privilege bootstrap happens via the one-shot `db-init` service below
+      # (creates the signalforge_app login/db_owner so the API/worker never use sa).
     healthcheck:
       test: ["CMD-SHELL", "/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P \"$$MSSQL_SA_PASSWORD\" -C -Q \"SELECT 1\" -b -o /dev/null || exit 1"]
       interval: 5s
@@ -27,19 +32,41 @@ services:
     networks:
       - signalforge
 
+  # One-shot least-privilege bootstrap: runs mssql/init/01-create-app-login.sh exactly
+  # once per up, creating the signalforge_app login + SignalForge DB (idempotently).
+  # The API and worker wait for it via service_completed_successfully.
+  db-init:
+    image: ${MSSQL_IMAGE:-mcr.microsoft.com/mssql/server:2022-latest}
+    container_name: signalforge-db-init
+    depends_on:
+      mssql:
+        condition: service_healthy
+    environment:
+      MSSQL_SA_PASSWORD: ${MSSQL_SA_PASSWORD:?set MSSQL_SA_PASSWORD in .env}
+      APP_DB_PASSWORD: ${APP_DB_PASSWORD:?set APP_DB_PASSWORD in .env}
+      DB_HOST: mssql
+    volumes:
+      - ./mssql/init:/init:ro
+    command: bash -c 'until /opt/mssql-tools18/bin/sqlcmd -S mssql -U sa -P "$$MSSQL_SA_PASSWORD" -C -Q "SELECT 1" -b -o /dev/null 2>/dev/null; do sleep 2; done; bash /init/01-create-app-login.sh'
+    restart: "no"
+    networks:
+      - signalforge
+
   api:
     build:
       context: .
       dockerfile: src/SignalForge.Api/Dockerfile
     container_name: signalforge-api
     depends_on:
+      db-init:
+        condition: service_completed_successfully
       mssql:
         condition: service_healthy
     environment:
       ASPNETCORE_ENVIRONMENT: Production
       ASPNETCORE_URLS: http://+:8080
       Logging__Console__Json: "true"
-      ConnectionStrings__SignalForgeConnection: "Server=mssql;Database=SignalForge;User Id=sa;Password=${MSSQL_SA_PASSWORD};TrustServerCertificate=True;Encrypt=False"
+      ConnectionStrings__SignalForgeConnection: "Server=mssql;Database=SignalForge;User Id=signalforge_app;Password=${APP_DB_PASSWORD};TrustServerCertificate=True;Encrypt=False"
       Migrations__AutoApply: "true"
       Seed__Enabled: "true"
       # TenantId left unset -> DatabaseSeeder.DefaultTenantId is used.
@@ -74,7 +101,7 @@ services:
         condition: service_healthy
     environment:
       Logging__Console__Json: "true"
-      ConnectionStrings__SignalForgeConnection: "Server=mssql;Database=SignalForge;User Id=sa;Password=${MSSQL_SA_PASSWORD};TrustServerCertificate=True;Encrypt=False"
+      ConnectionStrings__SignalForgeConnection: "Server=mssql;Database=SignalForge;User Id=signalforge_app;Password=${APP_DB_PASSWORD};TrustServerCertificate=True;Encrypt=False"
     restart: on-failure
     networks:
       - signalforge

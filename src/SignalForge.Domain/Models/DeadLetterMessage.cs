@@ -59,7 +59,11 @@ public class DeadLetterMessage
     }
 
     /// <summary>
-    /// Creates a new dead letter message from a failed workflow step execution.
+    /// Creates a new dead letter message from a failed workflow step execution. The step type is
+    /// read from the step execution's <see cref="WorkflowStep"/> navigation; when that navigation is
+    /// not loaded (e.g. the step execution was loaded without its step), use the
+    /// <see cref="CreateFromFailedStep(WorkflowStepExecution, WorkflowExecution, string)"/> overload
+    /// to supply the type explicitly.
     /// </summary>
     /// <param name="workflowStepExecution">The failed step execution</param>
     /// <param name="workflowExecution">The workflow execution</param>
@@ -68,12 +72,37 @@ public class DeadLetterMessage
         WorkflowStepExecution workflowStepExecution,
         WorkflowExecution workflowExecution)
     {
+        ArgumentNullException.ThrowIfNull(workflowStepExecution);
+        ArgumentNullException.ThrowIfNull(workflowExecution);
+
+        return CreateFromFailedStep(
+            workflowStepExecution,
+            workflowExecution,
+            workflowStepExecution.WorkflowStep?.StepType
+                ?? throw new InvalidOperationException(
+                    "Step execution does not have its WorkflowStep navigation loaded; " +
+                    "pass the step type explicitly instead."));
+    }
+
+    /// <summary>
+    /// Creates a new dead letter message from a failed workflow step execution, with the failing
+    /// step's type supplied explicitly (no navigation requirement).
+    /// </summary>
+    /// <param name="workflowStepExecution">The failed step execution</param>
+    /// <param name="workflowExecution">The workflow execution</param>
+    /// <param name="failedStepType">The workflow step type that failed</param>
+    /// <returns>A new DeadLetterMessage instance</returns>
+    public static DeadLetterMessage CreateFromFailedStep(
+        WorkflowStepExecution workflowStepExecution,
+        WorkflowExecution workflowExecution,
+        string failedStepType)
+    {
         return new DeadLetterMessage(
             Guid.NewGuid(),
             workflowExecution.TenantId,
-            workflowStepExecution.WorkflowStep.StepType,
+            failedStepType,
             workflowStepExecution.Output ?? "{}", // Store the last output/payload
-            workflowStepExecution.WorkflowStep.StepType,
+            failedStepType,
             workflowStepExecution.StepNumber,
             workflowExecution.Id,
             workflowStepExecution.Id,

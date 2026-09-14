@@ -61,8 +61,50 @@ public class ApiKeyTests
         var a = ApiKey.Create(Guid.NewGuid(), "one", PlainText);
         var b = ApiKey.Create(Guid.NewGuid(), "two", PlainText);
 
-        Assert.Equal(a.KeyHash, b.KeyHash);
+        // Salting: same plaintext yields distinct stored hashes, but both verify.
+        Assert.NotEqual(a.KeyHash, b.KeyHash);
+        Assert.True(a.VerifyKey(PlainText));
         Assert.True(b.VerifyKey(PlainText));
+    }
+
+    [Fact]
+    public void Create_uses_versioned_salted_hash()
+    {
+        var key = ApiKey.Create(Guid.NewGuid(), "my-key", PlainText);
+
+        Assert.StartsWith("$pbkdf2-sha256$", key.KeyHash);
+        Assert.False(key.RequiresKeyHashMigration);
+    }
+
+    [Fact]
+    public void Legacy_sha256_hash_verifies_and_flags_migration()
+    {
+        var legacyHash = Convert.ToBase64String(
+            System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(PlainText)));
+        var key = ApiKey.Create(Guid.NewGuid(), "my-key", "ignored");
+
+        typeof(ApiKey).GetProperty(nameof(ApiKey.KeyHash))!.GetSetMethod(nonPublic: true)!
+            .Invoke(key, new object[] { legacyHash });
+
+        Assert.True(key.RequiresKeyHashMigration);
+        Assert.True(key.VerifyKey(PlainText));
+        Assert.False(key.VerifyKey("wrong-key"));
+    }
+
+    [Fact]
+    public void RehashKey_upgrades_legacy_hash_and_keeps_verification()
+    {
+        var legacyHash = Convert.ToBase64String(
+            System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(PlainText)));
+        var key = ApiKey.Create(Guid.NewGuid(), "my-key", "ignored");
+        typeof(ApiKey).GetProperty(nameof(ApiKey.KeyHash))!.GetSetMethod(nonPublic: true)!
+            .Invoke(key, new object[] { legacyHash });
+
+        key.RehashKey(PlainText);
+
+        Assert.False(key.RequiresKeyHashMigration);
+        Assert.StartsWith("$pbkdf2-sha256$", key.KeyHash);
+        Assert.True(key.VerifyKey(PlainText));
     }
 
     [Fact]
