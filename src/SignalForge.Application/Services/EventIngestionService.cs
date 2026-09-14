@@ -56,7 +56,33 @@ public class EventIngestionService : IEventIngestionService
             payload);
 
         _dbContext.Events.Add(newEvent);
-        await _dbContext.SaveChangesAsync(cancellationToken);
+        try
+        {
+            await _dbContext.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateException ex) when (UniqueKeyViolation.IsUniqueViolation(ex))
+        {
+            // Two concurrent POSTs with the same (TenantId, ExternalEventId) both passed the
+            // check above; the unique index let only one insert through. The whole batch was
+            // rolled back at the DB, so unwind our in-memory insert and report the idempotent
+            // outcome. (Remove on an Added entity detaches it; it will not be re-inserted by a
+            // later SaveChanges in the same scope.)
+            _dbContext.Events.Remove(newEvent);
+
+            var winner = await _dbContext.Events
+                .FirstOrDefaultAsync(e =>
+                    e.TenantId == tenantId &&
+                    e.ExternalEventId == externalEventId, cancellationToken);
+
+            if (winner is null)
+                throw; // Not the idempotency index — surface the original failure.
+
+            return new IngestEventResult
+            {
+                Event = winner,
+                IsNewEvent = false
+            };
+        }
 
         return new IngestEventResult
         {

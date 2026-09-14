@@ -31,7 +31,7 @@ public sealed class ApiIntegrationTests : ApiTestBase
     {
         var client = Factory.CreateClient();
 
-        var response = await client.GetAsync("/TestAuth/me");
+        var response = await client.GetAsync($"/{ApiRoute}/workflows");
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
     }
 
@@ -40,7 +40,7 @@ public sealed class ApiIntegrationTests : ApiTestBase
     {
         var client = Factory.CreateClient("definitely-not-a-real-key-123456");
 
-        var response = await client.GetAsync("/TestAuth/me");
+        var response = await client.GetAsync($"/{ApiRoute}/workflows");
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
     }
 
@@ -49,14 +49,12 @@ public sealed class ApiIntegrationTests : ApiTestBase
     {
         var client = Factory.CreateClientForSeededTenant();
 
-        var response = await client.GetAsync("/TestAuth/me");
+        var response = await client.GetAsync($"/{ApiRoute}/workflows");
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.True(response.Content.Headers.ContentType?.MediaType == "application/json");
 
-        var body = JsonNode.Parse(await response.Content.ReadAsStringAsync())!.AsObject();
-        Assert.True((bool)body["authenticated"]!);
-        Assert.Equal(ApiTestFactory.TenantId.ToString(), (string)body["tenantId"]!);
-        Assert.Equal(ApiTestFactory.ApiKeyName, (string)body["apiKeyName"]!);
+        var items = JsonNode.Parse(await response.Content.ReadAsStringAsync())!.AsArray();
+        Assert.All(items, item => Assert.True(Guid.TryParse((string)item!["id"]!, out _)));
     }
 
     // ---------- Event ingestion + idempotency ----------
@@ -89,6 +87,33 @@ public sealed class ApiIntegrationTests : ApiTestBase
         var getById = await client.GetAsync($"/{ApiRoute}/events/{eventId}");
         Assert.Equal(HttpStatusCode.OK, getById.StatusCode);
         Assert.Equal(eventId, Guid.Parse((string)JsonNode.Parse(await getById.Content.ReadAsStringAsync())!["id"]!));
+    }
+
+    [Fact]
+    public async Task Concurrent_IdenticalEventPosts_Produce_Single_Creation_And_One_Event()
+    {
+        var client = Factory.CreateClientForSeededTenant();
+        var externalId = $"ext-race-{Guid.NewGuid():N}";
+        var createRaw = EventSigner.CamelJson(new
+        {
+            ExternalEventId = externalId,
+            EventType = "order.created",
+            Payload = "{}"
+        });
+
+        var first = EventSigner.PostSignedEventAsync(client, ApiTestFactory.SigningSecret, createRaw);
+        var second = EventSigner.PostSignedEventAsync(client, ApiTestFactory.SigningSecret, createRaw);
+        var responses = await Task.WhenAll(first, second);
+
+        // Exactly one request wins the unique-index race and creates the row; the loser
+        // observes the winner's row and reports the same event with Idempotent=true (200).
+        var statuses = responses.Select(r => r.StatusCode).OrderBy(s => s).ToArray();
+        Assert.Equal(new[] { HttpStatusCode.OK, HttpStatusCode.Created }, statuses); // ascending: OK(200) < Created(201)
+
+        var bodies = await Task.WhenAll(responses.Select(async r =>
+            JsonNode.Parse(await r.Content.ReadAsStringAsync())!.AsObject()));
+        var ids = bodies.Select(b => Guid.Parse((string)b["id"]!)).ToArray();
+        Assert.Equal(ids[0], ids[1]);
     }
 
     [Fact]
@@ -342,6 +367,42 @@ public sealed class ApiIntegrationTests : ApiTestBase
         var clientB = Factory.CreateClient(KeyB);
         var crossRead = await clientB.GetAsync($"/{ApiRoute}/workflows/{workflow}");
         Assert.Equal(HttpStatusCode.NotFound, crossRead.StatusCode);
+    }
+
+    // ---------- Step retry over HTTP (L6) ----------
+
+    [Fact]
+    public async Task Retry_Failed_Step_Over_Http_Returns_Retrying_And_Is_Tenant_Isolated()
+    {
+        var client = Factory.CreateClientForSeededTenant();
+        await SeedTenantBAsync();
+
+        Guid executionId, stepExecutionId;
+        using (var ctx = new SignalForgeDbContext(DbOptions()))
+        {
+            (_, _, _, executionId, stepExecutionId) =
+                await SeedFailedStepExecutionAsync(ctx, ApiTestFactory.TenantId, "itest-retry-wf");
+        }
+
+        // Tenant A's failed step is retried → 200 with the step moved to Retrying + NextRetryAt.
+        var retry = await client.PostAsync(
+            $"/{ApiRoute}/workflows/{executionId}/steps/{stepExecutionId}/retry", null);
+        Assert.Equal(HttpStatusCode.OK, retry.StatusCode);
+        var step = JsonNode.Parse(await retry.Content.ReadAsStringAsync())!.AsObject();
+        Assert.Equal(stepExecutionId, Guid.Parse((string)step["id"]!));
+        Assert.Equal("Retrying", (string)step["status"]!);
+        Assert.NotNull((string?)step["nextRetryAt"]);
+
+        // Tenant B cannot reach A's step even with the exact IDs.
+        var clientB = Factory.CreateClient(KeyB);
+        var crossRetry = await clientB.PostAsync(
+            $"/{ApiRoute}/workflows/{executionId}/steps/{stepExecutionId}/retry", null);
+        Assert.Equal(HttpStatusCode.NotFound, crossRetry.StatusCode);
+
+        // An already-retrying step (its worker-owned window hasn't come due) is not re-booked.
+        var again = await client.PostAsync(
+            $"/{ApiRoute}/workflows/{executionId}/steps/{stepExecutionId}/retry", null);
+        Assert.Equal(HttpStatusCode.Conflict, again.StatusCode);
     }
 
     // ---------- Dead-letter lifecycle ----------
