@@ -1,5 +1,4 @@
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using SignalForge.Application.Services;
 using SignalForge.Domain.Models;
@@ -167,9 +166,8 @@ public class CrossTenantIsolationTests : ApiTestBase
             }
 
             using var readCtx = new SignalForgeDbContext(options);
-            var emptyProvider = new ServiceCollection().BuildServiceProvider();
             var orchestratorA = new WorkflowExecutionOrchestratorService(
-                readCtx, emptyProvider, NullLogger<WorkflowExecutionOrchestratorService>.Instance);
+                readCtx, new StepProcessorRegistry([]), NullLogger<WorkflowExecutionOrchestratorService>.Instance);
 
             Assert.NotNull(await orchestratorA.GetWorkflowExecutionByIdAsync(executionId, TenantA));
             Assert.Null(await orchestratorA.GetWorkflowExecutionByIdAsync(executionId, TenantB));

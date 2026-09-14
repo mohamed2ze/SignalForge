@@ -150,7 +150,7 @@ public sealed class SoftDeleteQueryFilterTests : ApiTestBase
         await ctx.SaveChangesAsync();
 
         var client = Factory.CreateClient(KeyB);
-        var response = await client.GetAsync("/TestAuth/me");
+        var response = await client.GetAsync($"/{ApiRoute}/workflows");
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
     }
 

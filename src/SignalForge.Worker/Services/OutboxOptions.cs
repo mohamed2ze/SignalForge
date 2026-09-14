@@ -20,5 +20,14 @@ namespace SignalForge.Worker.Services
 
         /// <summary>Upper bound for the exponential backoff between cycles.</summary>
         public double MaxBackoffSeconds { get; set; } = 300;
+
+        /// <summary>
+        /// How long a claimed outbox row is pinned to one worker before another may reclaim it.
+        /// Prevents duplicate sends after a crash: a worker that dies between claiming and
+        /// processing leaves ClaimedAt set, and no other worker touches the row until this lease
+        /// lapses. Must comfortably exceed a single message's send time (<c>BatchSize</c> ×
+        /// slowest consumer), otherwise a slow-but-healthy worker could be double-sent.
+        /// </summary>
+        public double ClaimLeaseSeconds { get; set; } = 300;
     }
 }

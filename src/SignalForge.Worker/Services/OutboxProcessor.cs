@@ -3,6 +3,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using SignalForge.Application.Data;
+using SignalForge.Application.Security;
 using SignalForge.Domain.Models;
 
 namespace SignalForge.Worker.Services;
@@ -53,22 +54,47 @@ public class OutboxProcessor : IOutboxProcessor
             // retry gate has passed: a poison message is scheduled (NextRetryAt)
             // and not re-claimed on consecutive cycles, so a single failing message can no longer
             // tight-loop the broker. Only dead-lettered messages disappear.
+            // Claims are leased (ClaimedAt): a row claimed by a still-live worker is invisible to
+            // every other worker, so a crashed worker's claim expires only after
+            // ClaimLeaseSeconds — preventing duplicate sends while a slow worker is mid-batch.
             var now = DateTime.UtcNow;
-            var messages = await dbContext.OutboxMessages
+            var leaseWatermark = now.AddSeconds(-_options.ClaimLeaseSeconds);
+
+            var candidateIds = await dbContext.OutboxMessages
                 .Where(m => !m.IsProcessed)
                 .Where(m => m.FailedAt == null || m.NextRetryAt == null || m.NextRetryAt <= now)
+                .Where(m => m.ClaimedAt == null || m.ClaimedAt < leaseWatermark)
                 .OrderBy(m => m.CreatedAt)
                 .ThenBy(m => m.Id) // Deterministic tiebreak between same-instant messages
+                .Select(m => m.Id)
                 .Take(_options.BatchSize)
                 .ToListAsync(cancellationToken);
 
-            _logger.LogDebug("Polled {Count} outbox messages", messages.Count);
+            _logger.LogDebug("Polled {Count} candidate outbox messages", candidateIds.Count);
 
-            if (messages.Count == 0)
+            if (candidateIds.Count == 0)
             {
                 ResetBreaker();
                 return TimeSpan.FromSeconds(_options.PollIntervalSeconds);
             }
+
+            // Atomic claim: transition exactly the rows this cycle selected — as long as they are
+            // still unclaimed. If another worker claimed some between the select and here, the
+            // claim affects fewer rows and the re-query below materializes only this cycle's own
+            // rows, so the two workers never deliver the same message.
+            var claimedIds = await ClaimAsync(dbContext, candidateIds, now, leaseWatermark, cancellationToken);
+
+            if (claimedIds.Count == 0)
+            {
+                ResetBreaker();
+                return TimeSpan.FromSeconds(_options.PollIntervalSeconds);
+            }
+
+            var messages = await dbContext.OutboxMessages
+                .Where(m => claimedIds.Contains(m.Id))
+                .OrderBy(m => m.CreatedAt)
+                .ThenBy(m => m.Id)
+                .ToListAsync(cancellationToken);
 
             _logger.LogInformation("Processing {Count} outbox messages", messages.Count);
 
@@ -82,22 +108,25 @@ public class OutboxProcessor : IOutboxProcessor
                     await sender.SendAsync(message.Type, message.Payload, cancellationToken);
 
                     // Ack after successful send. Note: if the process crashes between the send
-                    // and this save, the message is re-polled and may be sent twice. Exactly-once
-                    // delivery requires broker-side de-duplication, deferred to a later stage;
-                    // the outbox pattern guarantees at-least-once.
+                    // and this save, the message is re-polled (once its lease lapses) and may be
+                    // sent twice. Exactly-once delivery requires broker-side de-duplication,
+                    // deferred to a later stage; the outbox pattern guarantees at-least-once, with
+                    // the claim minimizing the crash window to the send progress, not the batch.
                     message.MarkAsProcessed();
+                    message.ReleaseClaim();
                     _logger.LogDebug("Processed outbox message {messageId} for tenant {tenantId}",
                         message.Id, message.TenantId);
                 }
                 catch (Exception ex)
                 {
+                    var errorText = StorageText.ScrubForStorage(ex.ToString())!;
                     message.IncrementAttempt();
-                    message.MarkAsFailed(ex.ToString());
+                    message.MarkAsFailed(errorText);
 
                     if (message.AttemptCount >= _options.MaxAttempts)
                     {
                         // Exhausted retries: move to the dead-letter table and stop retrying.
-                        var deadLetter = DeadLetterMessage.CreateFromOutboxMessage(message, ex.ToString());
+                        var deadLetter = DeadLetterMessage.CreateFromOutboxMessage(message, errorText);
                         dbContext.DeadLetterMessages.Add(deadLetter);
                         dbContext.OutboxMessages.Remove(message);
 
@@ -116,6 +145,7 @@ public class OutboxProcessor : IOutboxProcessor
                             Math.Pow(2, message.AttemptCount),
                             _options.MaxBackoffSeconds);
                         message.ScheduleNextRetry(DateTime.UtcNow.AddSeconds(retryBackoffSeconds));
+                        message.ReleaseClaim();
 
                         _logger.LogWarning(ex,
                             "Failed to process outbox message {messageId} for tenant {tenantId} " +
@@ -149,6 +179,59 @@ public class OutboxProcessor : IOutboxProcessor
             _logger.LogError(ex, "Error in outbox poll cycle");
             return _currentBackoff;
         }
+    }
+
+    /// <summary>
+    /// Atomically claims <paramref name="candidateIds"/>, stamping each claimed row with this
+    /// cycle's <paramref name="now"/> so ownership is attributable. Returns only the rows this
+    /// cycle actually owns; any row a competing worker claimed in the meantime is excluded.
+    /// </summary>
+    /// <remarks>
+    /// Relational providers use a single <c>ExecuteUpdateAsync</c> that flips only still-claimable
+    /// rows in one statement (the race-proof path used in production). The EF Core in-memory
+    /// provider does not support ExecuteUpdate/ExecuteDelete, so the claim falls back to tracked
+    /// entities re-checking the same guard — deterministic for the single-writer unit tests and
+    /// logically equivalent for the provider's semantics.
+    /// </remarks>
+    private static async Task<HashSet<Guid>> ClaimAsync(
+        ISignalForgeDbContext dbContext,
+        List<Guid> candidateIds,
+        DateTime now,
+        DateTime leaseWatermark,
+        CancellationToken cancellationToken)
+    {
+        if (dbContext.Database.IsRelational())
+        {
+            var affected = await dbContext.OutboxMessages
+                .Where(m => candidateIds.Contains(m.Id))
+                .Where(m => m.ClaimedAt == null || m.ClaimedAt < leaseWatermark)
+                .ExecuteUpdateAsync(
+                    s => s.SetProperty(m => m.ClaimedAt, now),
+                    cancellationToken);
+
+            if (affected == 0)
+                return new HashSet<Guid>();
+        }
+        else
+        {
+            var pending = await dbContext.OutboxMessages
+                .Where(m => candidateIds.Contains(m.Id))
+                .Where(m => m.ClaimedAt == null || m.ClaimedAt < leaseWatermark)
+                .ToListAsync(cancellationToken);
+
+            foreach (var message in pending)
+                message.Claim(now);
+
+            await dbContext.SaveChangesAsync(cancellationToken);
+        }
+
+        // Materialize exactly this cycle's claim. The candidateIds guard also covers the
+        // (practically unreachable) clock collision where a peer stamps the same instant.
+        return (await dbContext.OutboxMessages
+            .Where(m => m.ClaimedAt == now && candidateIds.Contains(m.Id))
+            .Select(m => m.Id)
+            .ToListAsync(cancellationToken))
+            .ToHashSet();
     }
 
     /// <summary>

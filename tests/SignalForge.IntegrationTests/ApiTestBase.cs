@@ -177,6 +177,35 @@ public abstract class ApiTestBase : IDisposable
         return (workflow.Id, deadLetter.Id);
     }
 
+    /// <summary>A published single-step workflow with one FAILED step execution (attempts remaining),
+    /// ready for the HTTP retry endpoint.</summary>
+    protected static async Task<(Guid WorkflowId, Guid VersionId, Guid EventId, Guid ExecutionId, Guid StepExecutionId)>
+        SeedFailedStepExecutionAsync(SignalForgeDbContext ctx, Guid tenantId, string workflowName)
+    {
+        var workflow = Workflow.Create(tenantId, workflowName, "retry seed workflow");
+        var version = WorkflowVersion.Create(workflow.Id, 1);
+        version.AddStep(1, nameof(StepType.Delay), """{"seconds":1}""", "initial");
+        version.Publish();
+
+        var evt = Event.Create(tenantId, $"rtry-{Guid.NewGuid():N}", "order.created", DateTime.UtcNow, "{}");
+        var execution = WorkflowExecution.Create(workflow.Id, version.Id, evt.Id, tenantId);
+        execution.Start();
+
+        var step = version.Steps.Single(s => s.StepNumber == 1);
+        var stepExecution = WorkflowStepExecution.Create(execution.Id, step.Id, 1);
+        stepExecution.Start();
+        stepExecution.Fail("simulated failure");
+
+        ctx.Workflows.Add(workflow);
+        ctx.WorkflowVersions.Add(version);
+        ctx.Events.Add(evt);
+        ctx.WorkflowExecutions.Add(execution);
+        ctx.WorkflowStepExecutions.Add(stepExecution);
+        await ctx.SaveChangesAsync();
+
+        return (workflow.Id, version.Id, evt.Id, execution.Id, stepExecution.Id);
+    }
+
     // ---------- HTTP workflow-surface helpers ----------
 
     protected static async Task<Guid> CreateWorkflowAsync(HttpClient client, string name)

@@ -15,6 +15,14 @@ public class OutboxMessage
     public DateTime? ProcessedAt { get; private set; }
     public DateTime? FailedAt { get; private set; }
     public DateTime? NextRetryAt { get; private set; } // Per-message retry gate: not re-polled before this time
+
+    /// <summary>
+    /// When this cycle claimed the row for processing. Set atomically at poll time
+    /// (<c>ExecuteUpdateAsync</c>), cleared when the message is processed, failed-and-retired, or
+    /// dead-lettered. Rows still claimed by a crashed worker stay set until the lease expires
+    /// (the worker's ClaimLeaseSeconds option), after which another worker may reclaim them.
+    /// </summary>
+    public DateTime? ClaimedAt { get; private set; }
     public int AttemptCount { get; private set; }
     public string? ErrorMessage { get; private set; }
     public bool IsProcessed { get; private set; }
@@ -147,5 +155,27 @@ public class OutboxMessage
     public bool HasFailed()
     {
         return FailedAt.HasValue;
+    }
+
+    /// <summary>
+    /// Stamps this message as claimed by the current poll cycle, tied to the claim lease.
+    /// </summary>
+    /// <param name="claimedAtUtc">The UTC instant this cycle claimed the message</param>
+    public void Claim(DateTime claimedAtUtc)
+    {
+        if (claimedAtUtc.Kind == DateTimeKind.Local)
+            throw new ArgumentException("Claim time must be UTC", nameof(claimedAtUtc));
+
+        ClaimedAt = claimedAtUtc;
+    }
+
+    /// <summary>
+    /// Releases this cycle's claim so the message can be re-polled. Called on the success and
+    /// per-message retry paths (the dead-letter path removes the row entirely), keeping the row
+    /// claimable again immediately rather than holding a fresh lease.
+    /// </summary>
+    public void ReleaseClaim()
+    {
+        ClaimedAt = null;
     }
 }

@@ -33,17 +33,29 @@ public class OutboxMessageConfiguration : IEntityTypeConfiguration<OutboxMessage
         builder.Property(ob => ob.FailedAt)
             .IsRequired(false);
 
+        builder.Property(ob => ob.ClaimedAt)
+            .IsRequired(false);
+
         builder.Property(ob => ob.AttemptCount)
             .IsRequired();
 
+        // ErrorMessage is nvarchar(max): failure text can exceed 2000 chars, and the fixed cap used to
+        // throw "String or binary data would be truncated". Bound at write time via
+        // StorageText.TruncateForStorage.
         builder.Property(ob => ob.ErrorMessage)
-            .HasMaxLength(2000);
+            .IsRequired(false);
 
         builder.Property(ob => ob.IsProcessed)
             .IsRequired();
 
         builder.Property(ob => ob.ReplaySourceDeadLetterId)
             .IsRequired(false);
+
+        // Worker poll query: "oldest unprocessed messages whose retry gate has passed and whose claim
+        // is free or expired". The composite index serves the IsProcessed + FailedAt/NextRetryAt +
+        // ClaimedAt filters and the CreatedAt/Id ordering without a sort.
+        builder.HasIndex(ob => new { ob.IsProcessed, ob.FailedAt, ob.NextRetryAt, ob.ClaimedAt, ob.CreatedAt, ob.Id })
+            .HasDatabaseName("IX_OutboxMessages_Poll");
 
         // Single in-flight requeue lookups: "any unprocessed outbox message replayed from dead
         // letter X". No FK — the dead letter stays visible and deletable independently of a

@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
+using SignalForge.Application.Broker;
 using SignalForge.Application.Data;
 using SignalForge.Domain.Models;
 using SignalForge.Infrastructure.Broker;
@@ -268,31 +269,50 @@ public class OutboxProcessorTests
         }
     }
 
-    // ---------- Test/Fail seam: throws before the broker, still dead-letters ----------
+    // ---------- broker rejection → retry gate → dead-letter (driven by broker double) ----------
+
+    /// <summary>A broker double that rejects every publish, letting the failure/backoff/DLQ path be
+    /// exercised without a reserved message type.</summary>
+    private sealed class RejectingBroker : IMessageBroker
+    {
+        public int CallCount { get; private set; }
+
+        public Task<bool> PublishAsync(string type, string payload, CancellationToken cancellationToken = default)
+        {
+            CallCount++;
+            return Task.FromResult(false);
+        }
+    }
 
     [Fact]
-    public async Task TestFail_throws_before_broker_and_still_deadletters()
+    public async Task Broker_rejected_message_retries_then_deadletters_and_is_never_repolled()
     {
         var options = NewInMemoryOptions();
         await SeedMessageAsync(options, "Test/Fail", """{"boom":true}""");
 
-        var broker = new InMemoryMessageBroker();
+        var broker = new RejectingBroker();
         var sender = new OutboxMessageSender(broker, NullLogger<OutboxMessageSender>.Instance);
         var processor = CreateProcessor(
             BuildScopeFactory(options, sender),
-            new OutboxOptions { MaxAttempts = 1 });
+            new OutboxOptions { MaxAttempts = 3 });
 
-        await processor.ProcessBatchAsync(CancellationToken.None);
+        // Cycle, wait out the retry gate, cycle again — three broker attempts total.
+        for (var attempt = 1; attempt <= 3; attempt++)
+        {
+            await processor.ProcessBatchAsync(CancellationToken.None);
+            if (attempt < 3)
+                await MakeRetryDueAsync(options);
+        }
 
-        // Nothing ever reached the broker (the seam throws before PublishAsync).
-        Assert.Empty(broker.GetAll());
+        // Every attempt went to the broker, which rejected each one.
+        Assert.Equal(3, broker.CallCount);
 
         using (var verify = new SignalForgeDbContext(options))
         {
             Assert.Empty(await verify.OutboxMessages.Where(m => m.TenantId == TenantId).ToListAsync());
             var deadLetter = await verify.DeadLetterMessages.SingleAsync();
             Assert.Equal("Test/Fail", deadLetter.OriginalMessageType);
-            Assert.Equal(1, deadLetter.FinalAttemptCount);
+            Assert.Equal(3, deadLetter.FinalAttemptCount);
         }
     }
 
@@ -338,6 +358,89 @@ public class OutboxProcessorTests
             Assert.True(message.IsProcessed);
             Assert.Equal(0, message.AttemptCount); // fresh send, never retried
         }
+    }
+
+    // ---------- atomic claim: a fresh lease hides the row, an expired one reclaims it ----------
+
+    [Fact]
+    public async Task Fresh_lease_prevents_a_second_worker_delivering_the_same_message()
+    {
+        var options = NewInMemoryOptions();
+        await SeedMessageAsync(options, "OrderCreated", """{"id":1}""");
+
+        // Another worker claimed this row moments ago; its lease is still held.
+        await SetClaimedAtAsync(options, DateTime.UtcNow);
+
+        var broker = new InMemoryMessageBroker();
+        var sender = new OutboxMessageSender(broker, NullLogger<OutboxMessageSender>.Instance);
+        var processor = CreateProcessor(BuildScopeFactory(options, sender));
+
+        var delay = await processor.ProcessBatchAsync(CancellationToken.None);
+        Assert.Equal(TimeSpan.FromSeconds(5), delay);
+
+        // The row was invisible to this cycle: nothing delivered, nothing mutated.
+        Assert.Empty(broker.GetAll());
+        using (var verify = new SignalForgeDbContext(options))
+        {
+            var message = await verify.OutboxMessages.SingleAsync();
+            Assert.False(message.IsProcessed);
+            Assert.NotNull(message.ClaimedAt);
+        }
+    }
+
+    [Fact]
+    public async Task Expired_lease_is_reclaimed_and_delivered_exactly_once()
+    {
+        var options = NewInMemoryOptions();
+        await SeedMessageAsync(options, "OrderCreated", """{"id":1}""");
+
+        // A crashed worker claimed this row well beyond the 300s lease default.
+        await SetClaimedAtAsync(options, DateTime.UtcNow.AddHours(-1));
+
+        var broker = new InMemoryMessageBroker();
+        var sender = new OutboxMessageSender(broker, NullLogger<OutboxMessageSender>.Instance);
+        var processor = CreateProcessor(BuildScopeFactory(options, sender));
+
+        await processor.ProcessBatchAsync(CancellationToken.None);
+
+        Assert.Single(broker.GetAll());
+        using (var verify = new SignalForgeDbContext(options))
+        {
+            var message = await verify.OutboxMessages.SingleAsync();
+            Assert.True(message.IsProcessed);
+            Assert.Null(message.ClaimedAt); // ack released the claim
+        }
+    }
+
+    [Fact]
+    public async Task Per_message_retry_releases_the_claim_so_the_gate_still_controls_repoll()
+    {
+        var options = NewInMemoryOptions();
+        await SeedMessageAsync(options, "OrderCreated", """{"id":1}""");
+
+        var sender = new ControlledSender { Throw = true };
+        var processor = CreateProcessor(BuildScopeFactory(options, sender));
+
+        await processor.ProcessBatchAsync(CancellationToken.None);
+
+        // The failed path releases its own claim: the message is markable as failed, and the
+        // NextRetryAt gate (not a stale lease) now governs when it may be re-polled.
+        using (var verify = new SignalForgeDbContext(options))
+        {
+            var message = await verify.OutboxMessages.SingleAsync();
+            Assert.Equal(1, message.AttemptCount);
+            Assert.False(message.IsProcessed);
+            Assert.NotNull(message.FailedAt);
+            Assert.Null(message.ClaimedAt);
+        }
+    }
+
+    private static async Task SetClaimedAtAsync(DbContextOptions<SignalForgeDbContext> options, DateTime claimedAtUtc)
+    {
+        await using var ctx = new SignalForgeDbContext(options);
+        var message = await ctx.OutboxMessages.SingleAsync();
+        ctx.Entry(message).Property(m => m.ClaimedAt).CurrentValue = claimedAtUtc;
+        await ctx.SaveChangesAsync();
     }
 
     private static async Task SeedMessageAsync(
