@@ -3,6 +3,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 using SignalForge.Application.Services;
+using SignalForge.Domain.Enums;
 using SignalForge.Domain.Models;
 
 namespace SignalForge.Application.Services
@@ -15,6 +16,8 @@ namespace SignalForge.Application.Services
     {
         private readonly IEventIngestionService _eventIngestionService;
         private readonly ILogger<EventEmissionStepProcessor> _logger;
+
+        public string StepTypeKey => nameof(StepType.EventEmission);
 
         public EventEmissionStepProcessor(
             IEventIngestionService eventIngestionService,

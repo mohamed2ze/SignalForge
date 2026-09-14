@@ -3,6 +3,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 using SignalForge.Application.Services;
+using SignalForge.Domain.Enums;
 using SignalForge.Domain.Models;
 
 namespace SignalForge.Application.Services
@@ -13,6 +14,8 @@ namespace SignalForge.Application.Services
     public class DelayStepProcessor : IStepProcessor
     {
         private readonly ILogger<DelayStepProcessor> _logger;
+
+        public string StepTypeKey => nameof(StepType.Delay);
 
         public DelayStepProcessor(ILogger<DelayStepProcessor> logger)
         {

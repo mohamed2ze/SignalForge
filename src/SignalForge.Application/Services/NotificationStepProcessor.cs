@@ -4,6 +4,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 using SignalForge.Application.Notifications;
+using SignalForge.Domain.Enums;
 using SignalForge.Domain.Models;
 
 namespace SignalForge.Application.Services;
@@ -17,6 +18,8 @@ namespace SignalForge.Application.Services;
 /// </summary>
 public class NotificationStepProcessor : IStepProcessor
 {
+    public string StepTypeKey => nameof(StepType.NotificationSimulation);
+
     private static readonly JsonSerializerOptions OutputOptions = new()
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,

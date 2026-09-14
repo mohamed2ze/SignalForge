@@ -42,6 +42,13 @@ public class WorkflowExecutionPumpTests
         services.AddSingleton<INotificationProviderRegistry>(_ => registry);
         services.AddSingleton(_ => new NotificationStepProcessor(
             registry, NullLogger<NotificationStepProcessor>.Instance));
+        services.AddSingleton<IStepProcessorRegistry>(sp => new StepProcessorRegistry(
+        [
+            sp.GetRequiredService<DelayStepProcessor>(),
+            sp.GetRequiredService<ConditionalStepProcessor>(),
+            sp.GetRequiredService<LogAuditStepProcessor>(),
+            sp.GetRequiredService<NotificationStepProcessor>()
+        ]));
         return services.BuildServiceProvider().GetRequiredService<IServiceScopeFactory>();
     }
 

@@ -4,6 +4,7 @@ using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 using SignalForge.Application.ExpressionEvaluation;
 using SignalForge.Application.Services;
+using SignalForge.Domain.Enums;
 using SignalForge.Domain.Models;
 
 namespace SignalForge.Application.Services
@@ -15,6 +16,8 @@ namespace SignalForge.Application.Services
     public class ConditionalStepProcessor : IStepProcessor
     {
         private readonly ILogger<ConditionalStepProcessor> _logger;
+
+        public string StepTypeKey => nameof(StepType.Conditional);
 
         public ConditionalStepProcessor(ILogger<ConditionalStepProcessor> logger)
         {

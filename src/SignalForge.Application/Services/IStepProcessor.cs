@@ -10,6 +10,9 @@ namespace SignalForge.Application.Services
     /// </summary>
     public interface IStepProcessor
     {
+        /// <summary>The step-type key this processor handles (e.g. <c>nameof(StepType.HttpWebhook)</c>).</summary>
+        string StepTypeKey { get; }
+
         /// <summary>
         /// Processes a workflow step execution.
         /// </summary>
