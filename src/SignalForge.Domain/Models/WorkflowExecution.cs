@@ -18,6 +18,15 @@ public class WorkflowExecution
     public int RetryCount { get; private set; } // Number of retries attempted
     public string? ErrorMessage { get; private set; } // Error details if failed
 
+    /// <summary>
+    /// UTC instant at which a worker leased this execution for advancement. A row claimed by a
+    /// live worker is invisible to every other worker for
+    /// <c>ExecutionPumpOptions.ClaimLeaseSeconds</c>; a crashed worker's claim then expires and
+    /// the execution becomes claimable again, giving the pump at-least-once (never exactly-once)
+    /// progress across restarts and multiple worker instances.
+    /// </summary>
+    public DateTime? ClaimedAt { get; private set; }
+
     // Navigation properties
     public Workflow Workflow { get; private set; } = default!;
     public WorkflowVersion WorkflowVersion { get; private set; } = default!;
@@ -181,6 +190,27 @@ public class WorkflowExecution
     public bool IsRunning()
     {
         return Status == WorkflowExecutionStatus.Running;
+    }
+
+    /// <summary>
+    /// Leases this execution to the claiming worker by stamping <see cref="ClaimedAt"/>.
+    /// </summary>
+    /// <param name="claimedAtUtc">The UTC instant of the claim.</param>
+    public void Claim(DateTime claimedAtUtc)
+    {
+        if (claimedAtUtc.Kind != DateTimeKind.Utc)
+            throw new ArgumentException("Claim time must be UTC", nameof(claimedAtUtc));
+
+        ClaimedAt = claimedAtUtc;
+    }
+
+    /// <summary>
+    /// Releases the lease after the worker has advanced (or failed to advance) the execution so
+    /// another worker may pick it up without waiting out the full lease window.
+    /// </summary>
+    public void ReleaseClaim()
+    {
+        ClaimedAt = null;
     }
 }
 

@@ -36,10 +36,13 @@ public class WorkflowExecutionConfiguration : IEntityTypeConfiguration<WorkflowE
         builder.Property(we => we.ErrorMessage)
             .HasMaxLength(2000);
 
+        builder.Property(we => we.ClaimedAt)
+            .IsRequired(false);
+
         // Worker pump poll: "oldest running executions whose next step is idle". Ordering by
-        // StartedAt and filtering by Status are both served by this index.
-        builder.HasIndex(we => new { we.Status, we.StartedAt })
-            .HasDatabaseName("IX_WorkflowExecutions_Status_StartedAt");
+        // StartedAt and filtering by Status/lease are all served by this index.
+        builder.HasIndex(we => new { we.Status, we.ClaimedAt, we.StartedAt })
+            .HasDatabaseName("IX_WorkflowExecutions_Status_ClaimedAt_StartedAt");
 
         // Navigation properties
         builder.HasOne(we => we.Workflow)

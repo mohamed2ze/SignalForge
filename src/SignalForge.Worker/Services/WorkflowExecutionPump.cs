@@ -44,25 +44,48 @@ public class WorkflowExecutionPump : IWorkflowExecutionPump
 
         try
         {
-            var candidates = await dbContext.WorkflowExecutions
+            var now = DateTime.UtcNow;
+            var leaseWatermark = now.AddSeconds(-_options.ClaimLeaseSeconds);
+
+            // Select candidates whose next step is not already in flight (Pending/Running):
+            // a step must not be double-started by repeated polls. Failed/Retrying steps are
+            // allowed through — the orchestrator re-enters them in place (retries on the same
+            // record) or fails the execution once attempts are exhausted. Leased executions
+            // (ClaimedAt newer than the lease watermark) are invisible to this worker, so two
+            // workers can never claim the same execution.
+            var candidateIds = await dbContext.WorkflowExecutions
                 .Where(e => e.Status == WorkflowExecutionStatus.Running)
-                // Only pick executions whose next step is not already in flight (Pending/Running):
-                // a step must not be double-started by repeated polls. Failed/Retrying steps are
-                // allowed through — the orchestrator re-enters them in place (retries on the same
-                // record) or fails the execution once attempts are exhausted.
+                .Where(e => e.ClaimedAt == null || e.ClaimedAt < leaseWatermark)
                 .Where(e => !dbContext.WorkflowStepExecutions.Any(se =>
                     se.WorkflowExecutionId == e.Id &&
                     se.StepNumber == e.CurrentStepNumber + 1 &&
                     (se.Status == WorkflowStepExecutionStatus.Pending ||
                      se.Status == WorkflowStepExecutionStatus.Running)))
                 .OrderBy(e => e.StartedAt)
+                .ThenBy(e => e.Id) // Deterministic tiebreak between same-instant executions
+                .Select(e => e.Id)
                 .Take(_options.BatchSize)
                 .ToListAsync(cancellationToken);
 
-            _logger.LogDebug("Polled {Count} runnable workflow executions", candidates.Count);
+            _logger.LogDebug("Polled {Count} runnable workflow executions", candidateIds.Count);
 
-            if (candidates.Count == 0)
+            if (candidateIds.Count == 0)
                 return TimeSpan.FromSeconds(_options.PollIntervalSeconds);
+
+            // Atomic claim: only this cycle's executions, and only while they are still
+            // unclaimed. If another worker claimed some between the select and here, the claim
+            // affects fewer rows and the re-query below materializes only this cycle's own rows —
+            // so the two workers never advance the same execution.
+            var claimedIds = await ClaimAsync(dbContext, candidateIds, now, leaseWatermark, cancellationToken);
+
+            if (claimedIds.Count == 0)
+                return TimeSpan.FromSeconds(_options.PollIntervalSeconds);
+
+            var candidates = await dbContext.WorkflowExecutions
+                .Where(e => claimedIds.Contains(e.Id))
+                .OrderBy(e => e.StartedAt)
+                .ThenBy(e => e.Id)
+                .ToListAsync(cancellationToken);
 
             foreach (var candidate in candidates)
             {
@@ -74,15 +97,34 @@ public class WorkflowExecutionPump : IWorkflowExecutionPump
                     var progressed = await orchestrator.AdvanceWorkflowExecutionAsync(
                         candidate.Id, cancellationToken);
 
+                    // Success path: release the lease so the next cycle (or another worker) may
+                    // pick the execution up again. Runs in a separate save so a late failure in
+                    // the release cannot hide the fully-persisted advance.
+                    await ReleaseClaimAsync(dbContext, candidate, cancellationToken);
+
                     _logger.LogDebug(
                         "Advanced workflow execution {executionId}: progressed {progressed}",
                         candidate.Id, progressed);
                 }
                 catch (Exception ex)
                 {
-                    // One bad execution must not stall the rest of the batch.
+                    // One bad execution must not stall the rest of the batch. Release the lease
+                    // immediately (rather than waiting out the full window) so a transient error
+                    // does not park the execution: the next cycle re-polls it, and poison
+                    // executions are ultimately dead-lettered by the step-retry machinery.
                     _logger.LogError(ex,
                         "Error advancing workflow execution {executionId}", candidate.Id);
+
+                    try
+                    {
+                        await ReleaseClaimAsync(dbContext, candidate, CancellationToken.None);
+                    }
+                    catch (Exception releaseEx)
+                    {
+                        _logger.LogError(releaseEx,
+                            "Failed to release lease on workflow execution {executionId}",
+                            candidate.Id);
+                    }
                 }
             }
 
@@ -97,5 +139,73 @@ public class WorkflowExecutionPump : IWorkflowExecutionPump
             _logger.LogError(ex, "Error in workflow execution pump cycle");
             return TimeSpan.FromSeconds(_options.PollIntervalSeconds);
         }
+    }
+
+    /// <summary>
+    /// Releases this cycle's lease on <paramref name="candidate"/> and persists it. The advance
+    /// already saved its own changes; this save only clears <see cref="WorkflowExecution.ClaimedAt"/>.
+    /// </summary>
+    private static async Task ReleaseClaimAsync(
+        ISignalForgeDbContext dbContext,
+        WorkflowExecution candidate,
+        CancellationToken cancellationToken)
+    {
+        candidate.ReleaseClaim();
+        await dbContext.SaveChangesAsync(cancellationToken);
+    }
+
+    /// <summary>
+    /// Atomically claims <paramref name="candidateIds"/>, stamping each claimed row with this
+    /// cycle's <paramref name="now"/> so ownership is attributable. Returns only the rows this
+    /// cycle actually owns; any row a competing worker claimed in the meantime is excluded.
+    /// </summary>
+    /// <remarks>
+    /// Relational providers use a single <c>ExecuteUpdateAsync</c> that flips only still-claimable
+    /// rows in one statement (the race-proof path used in production). The EF Core in-memory
+    /// provider does not support ExecuteUpdate/ExecuteDelete, so the claim falls back to tracked
+    /// entities re-checking the same guard — deterministic for the single-writer unit tests and
+    /// logically equivalent for the provider's semantics.
+    /// </remarks>
+    private static async Task<HashSet<Guid>> ClaimAsync(
+        ISignalForgeDbContext dbContext,
+        List<Guid> candidateIds,
+        DateTime now,
+        DateTime leaseWatermark,
+        CancellationToken cancellationToken)
+    {
+        if (dbContext.Database.IsRelational())
+        {
+            var affected = await dbContext.WorkflowExecutions
+                .Where(e => candidateIds.Contains(e.Id))
+                .Where(e => e.Status == WorkflowExecutionStatus.Running)
+                .Where(e => e.ClaimedAt == null || e.ClaimedAt < leaseWatermark)
+                .ExecuteUpdateAsync(
+                    s => s.SetProperty(e => e.ClaimedAt, now),
+                    cancellationToken);
+
+            if (affected == 0)
+                return new HashSet<Guid>();
+        }
+        else
+        {
+            var pending = await dbContext.WorkflowExecutions
+                .Where(e => candidateIds.Contains(e.Id))
+                .Where(e => e.Status == WorkflowExecutionStatus.Running)
+                .Where(e => e.ClaimedAt == null || e.ClaimedAt < leaseWatermark)
+                .ToListAsync(cancellationToken);
+
+            foreach (var execution in pending)
+                execution.Claim(now);
+
+            await dbContext.SaveChangesAsync(cancellationToken);
+        }
+
+        // Materialize exactly this cycle's claim. The candidateIds guard also covers the
+        // (practically unreachable) clock collision where a peer stamps the same instant.
+        return (await dbContext.WorkflowExecutions
+            .Where(e => e.ClaimedAt == now && candidateIds.Contains(e.Id))
+            .Select(e => e.Id)
+            .ToListAsync(cancellationToken))
+            .ToHashSet();
     }
 }

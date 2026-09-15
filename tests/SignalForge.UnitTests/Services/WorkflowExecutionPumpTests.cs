@@ -28,13 +28,15 @@ public class WorkflowExecutionPumpTests
     {
         var registry = new NotificationProviderRegistry(
         [
-            new EmailNotificationProvider(NullLogger<EmailNotificationProvider>.Instance),
-            new SmsNotificationProvider(NullLogger<SmsNotificationProvider>.Instance)
+            new EmailNotificationProvider(new RecordingEmailTransport()),
+            new SmsNotificationProvider(new RecordingSmsTransport())
         ]);
 
         var services = new ServiceCollection();
         services.AddLogging();
         services.AddScoped<ISignalForgeDbContext>(_ => new SignalForgeDbContext(options));
+        services.AddScoped<IWorkflowExecutionAdvancer, WorkflowExecutionAdvancer>();
+        services.AddScoped<IStepExecutionRetryPolicy, StepExecutionRetryPolicy>();
         services.AddScoped<IWorkflowExecutionOrchestratorService, WorkflowExecutionOrchestratorService>();
         services.AddSingleton(_ => new DelayStepProcessor(NullLogger<DelayStepProcessor>.Instance));
         services.AddSingleton(_ => new ConditionalStepProcessor(NullLogger<ConditionalStepProcessor>.Instance));
@@ -224,5 +226,107 @@ public class WorkflowExecutionPumpTests
         Assert.Equal(2, finalStep.AttemptNumber);
         Assert.Equal(WorkflowExecutionStatus.Running,
             (await finalDb.WorkflowExecutions.SingleAsync()).Status); // still orchestrating retries
+    }
+
+    [Fact]
+    public async Task Leased_execution_is_invisible_to_other_workers_until_the_lease_expires()
+    {
+        var options = NewInMemoryOptions();
+        var scopeFactory = BuildScopeFactory(options);
+        await SeedAsync(scopeFactory, v => v.AddStep(1, nameof(StepType.LogAudit),
+            """{"message":"hi","logLevel":"information"}"""), startExecution: true);
+
+        var now = DateTime.UtcNow;
+
+        // Worker A claims the execution with a fresh (unexpired) lease.
+        using (var scope = scopeFactory.CreateScope())
+        {
+            var db = (SignalForgeDbContext)scope.ServiceProvider.GetRequiredService<ISignalForgeDbContext>();
+            var execution = await db.WorkflowExecutions.SingleAsync();
+            execution.Claim(now);
+            await db.SaveChangesAsync();
+        }
+
+        // Worker B polls the same store: the claimed execution must not be advanced.
+        var delay = await CreatePump(scopeFactory).ProcessCycleAsync(CancellationToken.None);
+        Assert.Equal(TimeSpan.FromSeconds(2), delay);
+        using (var verify = scopeFactory.CreateScope())
+        {
+            var ctx = (SignalForgeDbContext)verify.ServiceProvider.GetRequiredService<ISignalForgeDbContext>();
+            var execution = await ctx.WorkflowExecutions.SingleAsync();
+            Assert.Equal(0, execution.CurrentStepNumber);
+            Assert.Empty(await ctx.WorkflowStepExecutions.ToListAsync());
+        }
+
+        // Expire the lease: the execution becomes claimable again and worker B advances it.
+        using (var scope = scopeFactory.CreateScope())
+        {
+            var db = (SignalForgeDbContext)scope.ServiceProvider.GetRequiredService<ISignalForgeDbContext>();
+            var execution = await db.WorkflowExecutions.SingleAsync();
+            db.Entry(execution).Property(e => e.ClaimedAt).CurrentValue =
+                now.AddSeconds(-601);
+            await db.SaveChangesAsync();
+        }
+
+        await CreatePump(scopeFactory).ProcessCycleAsync(CancellationToken.None);
+
+        using var finalScope = scopeFactory.CreateScope();
+        var finalDb = (SignalForgeDbContext)finalScope.ServiceProvider.GetRequiredService<ISignalForgeDbContext>();
+        var advanced = await finalDb.WorkflowExecutions.SingleAsync();
+        Assert.Equal(1, advanced.CurrentStepNumber);
+        Assert.Null(advanced.ClaimedAt); // lease released after the advance
+        Assert.Single(await finalDb.WorkflowStepExecutions.ToListAsync());
+    }
+
+    [Fact]
+    public async Task Two_workers_never_advance_the_same_execution_in_the_same_cycle()
+    {
+        var options = NewInMemoryOptions();
+        var scopeFactoryA = BuildScopeFactory(options);
+        var scopeFactoryB = BuildScopeFactory(options);
+
+        // Ten executions with one step each: enough work for both workers to claim overlapping.
+        for (var i = 0; i < 10; i++)
+        {
+            var tenantId = Guid.NewGuid();
+            using (var scope = scopeFactoryA.CreateScope())
+            {
+                var db = scope.ServiceProvider.GetRequiredService<ISignalForgeDbContext>();
+                db.Tenants.Add(Tenant.CreateWithId(tenantId, $"pump-con-{i}"));
+                var workflow = Workflow.Create(tenantId, $"con-wf-{i}");
+                var version = workflow.CreateDraftVersion(1);
+                version.AddStep(1, nameof(StepType.LogAudit),
+                    """{"message":"hi","logLevel":"information"}""", $"step-{i}");
+                workflow.Enable();
+                version.Publish();
+                var @event = Event.Create(tenantId, $"evt-{i}", "order.created", DateTime.UtcNow, "{}");
+                db.Workflows.Add(workflow);
+                db.Events.Add(@event);
+                await db.SaveChangesAsync();
+
+                var orchestrator = scope.ServiceProvider.GetRequiredService<IWorkflowExecutionOrchestratorService>();
+                await orchestrator.StartWorkflowExecutionAsync(workflow.Id, version.Id, @event.Id, tenantId);
+            }
+        }
+
+        var pumpA = CreatePump(scopeFactoryA, new ExecutionPumpOptions { BatchSize = 10, ClaimLeaseSeconds = 300 });
+        var pumpB = CreatePump(scopeFactoryB, new ExecutionPumpOptions { BatchSize = 10, ClaimLeaseSeconds = 300 });
+
+        // Drain with both workers interleaved: give each at least as many cycles as executions
+        // so any duplicate advancement would surface as duplicate step executions.
+        for (var cycle = 0; cycle < 10; cycle++)
+        {
+            await pumpA.ProcessCycleAsync(CancellationToken.None);
+            await pumpB.ProcessCycleAsync(CancellationToken.None);
+        }
+
+        using var verifyScope = scopeFactoryA.CreateScope();
+        var verifyDb = verifyScope.ServiceProvider.GetRequiredService<ISignalForgeDbContext>();
+        var stepExecutions = await verifyDb.WorkflowStepExecutions.ToListAsync();
+
+        // Every execution advanced exactly once: ten step executions, one per execution.
+        Assert.Equal(10, stepExecutions.Count);
+        Assert.Equal(10, await verifyDb.WorkflowExecutions.CountAsync());
+        Assert.Equal(10, stepExecutions.Select(se => se.WorkflowExecutionId).Distinct().Count());
     }
 }
