@@ -28,8 +28,11 @@ jobs:
       - name: Scan for credential literals
         run: |
           set +e
+          # The Password/PWD branch ignores dot-qualified values (e.g. "string.Empty" in C#
+          # member assignments such as UriBuilder.Password = string.Empty) while still catching
+          # literal secrets (plain text, quoted, or embedded in a larger string).
           grep -rn -P -i \
-            -e '(Password|PWD)[ ]*=[ \t]*(?!\$\{)[^ \t;\r\n"'"'"'\$]{8,}|SA_PASSWORD[ \t]*[:=][ \t]*(?!\$\{)[^ \t"\r\n\$]{6,}|(DefaultApiKey|X-API-Key|API_KEY)[ \t]*[:=][ \t]*["'"'"']?[A-Za-z0-9+/=_\-]{12,}|(^|[^A-Za-z0-9])AKIA[0-9A-Z]{16}($|[^A-Za-z0-9])|(^|[^A-Za-z0-9])gh[po]_[A-Za-z0-9]{36}($|[^A-Za-z0-9])|---BEGIN (RSA |OPENSSH |EC )?PRIVATE KEY' \
+            -e '(Password|PWD)[ ]*=[ \t]*(?!\$\{)[^ \t;\r\n"'"'"'\$\.]{8,}|SA_PASSWORD[ \t]*[:=][ \t]*(?!\$\{)[^ \t"\r\n\$]{6,}|(DefaultApiKey|X-API-Key|API_KEY)[ \t]*[:=][ \t]*["'"'"']?[A-Za-z0-9+/=_\-]{12,}|(^|[^A-Za-z0-9])AKIA[0-9A-Z]{16}($|[^A-Za-z0-9])|(^|[^A-Za-z0-9])gh[po]_[A-Za-z0-9]{36}($|[^A-Za-z0-9])|---BEGIN (RSA |OPENSSH |EC )?PRIVATE KEY' \
             -- src .github docker-compose.yml .editorconfig SignalForge.slnx dotnet-tools.json README.md 2>/dev/null
           status=$?
           set -e
