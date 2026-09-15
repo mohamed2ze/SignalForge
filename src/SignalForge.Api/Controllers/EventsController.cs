@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Microsoft.AspNetCore.Mvc;
 using SignalForge.Api.Dtos;
+using SignalForge.Api.Observability;
 using SignalForge.Application.Services;
 using static SignalForge.Api.Controllers.ApiControllerExtensions;
 
@@ -82,6 +83,8 @@ public class EventsController : ControllerBase
                 request.EventType,
                 request.OccurredAt ?? DateTime.UtcNow,
                 request.Payload);
+
+            ApiMetrics.EventsIngested.Inc();
 
             if (result.IsNewEvent)
             {

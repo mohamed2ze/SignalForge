@@ -1,12 +1,16 @@
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
+using Prometheus;
 using SignalForge.Api.Health;
 using SignalForge.Api.Middleware;
+using SignalForge.Api.Observability;
 using SignalForge.Application;
 using SignalForge.Application.Data;
+using SignalForge.Application.RateLimiting;
 using SignalForge.Application.Security;
 using SignalForge.Infrastructure.Data;
+using SignalForge.Infrastructure.RateLimiting;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -57,6 +61,7 @@ builder.Services.AddScoped<ISignalForgeDbContext, SignalForgeDbContext>();
 
 // Add application services
 builder.Services.AddApplicationServices();
+builder.Services.AddScoped<IUniqueViolationDetector, SqlUniqueKeyViolationDetector>();
 
 // Outbound webhook SSRF/timeout/size settings (defaults are strict; override per environment).
 builder.Services.AddOptions<OutboundWebhookOptions>()
@@ -70,9 +75,21 @@ builder.Services.AddAuthentication(ApiKeyAuthenticationDefaults.AuthenticationSc
 builder.Services.AddAuthorization();
 
 // Options for the API-key-scoped rate limiter (see ApiKeyRateLimitMiddleware). Defaults are a
-// generous 1000 req/min per API key; tighten via "RateLimiting:PermitLimit".
+// generous 1000 req/min per API key; tighten via "RateLimiting:PermitLimit". The counter store is
+// pluggable: InMemory (per process, built-in singleton) or Sql (one budget across all API nodes).
 builder.Services.Configure<ApiKeyRateLimitOptions>(
     builder.Configuration.GetSection(ApiKeyRateLimitOptions.SectionName));
+
+builder.Services.AddSingleton<IRateLimiter>(serviceProvider =>
+    builder.Configuration.GetValue<string>("RateLimiting:Store")?.Equals("Sql", StringComparison.OrdinalIgnoreCase) == true
+        ? new SqlRateLimiter(serviceProvider)
+        : new InMemoryRateLimiter());
+
+// Prometheus scrapable metrics: HTTP request metrics are collected inline, while the
+// database-backed backlog gauges are refreshed on a timer (see BacklogMetricsHostedService).
+builder.Services.Configure<MetricsOptions>(
+    builder.Configuration.GetSection(MetricsOptions.SectionName));
+builder.Services.AddHostedService<BacklogMetricsHostedService>();
 
 var app = builder.Build();
 
@@ -119,6 +136,14 @@ app.MapHealthChecks("/health/ready", new HealthCheckOptions
 {
     Predicate = _ => true,
 });
+
+// Prometheus /metrics endpoint (HTTP counters + the outbox/execution backlog gauges). The
+// endpoint is reachable without an API key; scrape it from the monitoring network only.
+if (builder.Configuration.GetValue<bool>("Metrics:Enabled", true))
+{
+    app.UseHttpMetrics();
+    app.MapMetrics();
+}
 
 // Apply EF migrations at startup only when explicitly enabled (e.g. the Docker Compose stack,
 // where a fresh database must be created before seeding). Local dev keeps using `dotnet ef
