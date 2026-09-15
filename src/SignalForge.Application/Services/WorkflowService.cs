@@ -6,6 +6,7 @@ using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using SignalForge.Application.Data;
+using SignalForge.Application.Validation;
 using SignalForge.Domain.Models;
 
 namespace SignalForge.Application.Services
@@ -102,6 +103,20 @@ namespace SignalForge.Application.Services
         }
 
         /// <inheritdoc />
+        public Task<WorkflowVersion?> GetWorkflowVersionAsync(
+            Guid versionId,
+            Guid tenantId,
+            CancellationToken cancellationToken = default)
+            => _dbContext.WorkflowVersions
+                .Include(v => v.Workflow)
+                .Include(v => v.Steps)
+                .FirstOrDefaultAsync(
+                    v => v.Id == versionId &&
+                         v.Workflow.TenantId == tenantId &&
+                         v.Workflow.DeletedAt == null,
+                    cancellationToken);
+
+        /// <inheritdoc />
         public async Task<WorkflowVersion?> CreateVersionAsync(
             Guid workflowId,
             Guid tenantId,
@@ -168,6 +183,174 @@ namespace SignalForge.Application.Services
 
             _logger.LogInformation("Workflow version {VersionId} (v{VersionNumber}) published for workflow {WorkflowId}",
                 version.Id, version.VersionNumber, workflowId);
+            return version;
+        }
+
+        /// <inheritdoc />
+        public async Task<WorkflowStep?> AddStepAsync(
+            Guid workflowVersionId,
+            Guid tenantId,
+            AddStepCommand command,
+            CancellationToken cancellationToken = default)
+        {
+            var version = await GetDraftVersionAsync(workflowVersionId, tenantId, cancellationToken);
+            if (version == null)
+                return null;
+
+            var validationError = WorkflowStepConfigurationValidator.Validate(command.StepType, command.Configuration);
+            if (validationError != null)
+                throw new InvalidOperationException(validationError);
+
+            var target = command.StepNumber ?? version.Steps.Count + 1;
+
+            // Insert at an explicit position: shift the steps at/after it down so the sequence
+            // never duplicates a number.
+            foreach (var existing in version.Steps.Where(s => s.StepNumber >= target))
+                existing.MoveTo(existing.StepNumber + 1);
+
+            var step = version.AddStep(
+                target,
+                command.StepType,
+                command.Configuration,
+                command.Name,
+                command.Description,
+                command.IsEnabled);
+
+            await _dbContext.SaveChangesAsync(cancellationToken);
+
+            _logger.LogInformation("Step {StepId} added to version {VersionId} at position {StepNumber}",
+                step.Id, workflowVersionId, step.StepNumber);
+            return step;
+        }
+
+        /// <inheritdoc />
+        public async Task<WorkflowStep?> UpdateStepAsync(
+            Guid workflowVersionId,
+            Guid tenantId,
+            Guid stepId,
+            UpdateStepCommand command,
+            CancellationToken cancellationToken = default)
+        {
+            var version = await GetDraftVersionAsync(workflowVersionId, tenantId, cancellationToken);
+            if (version == null)
+                return null;
+
+            var step = version.Steps.FirstOrDefault(s => s.Id == stepId);
+            if (step == null)
+                return null;
+
+            if (command.Configuration != null)
+            {
+                var validationError = WorkflowStepConfigurationValidator.Validate(step.StepType, command.Configuration);
+                if (validationError != null)
+                    throw new InvalidOperationException(validationError);
+            }
+
+            step.UpdateInfo(command.Name, command.Description, command.Configuration, command.IsEnabled);
+            await _dbContext.SaveChangesAsync(cancellationToken);
+
+            _logger.LogInformation("Step {StepId} updated on version {VersionId}", stepId, workflowVersionId);
+            return step;
+        }
+
+        /// <inheritdoc />
+        public async Task<WorkflowStep?> SetStepEnabledAsync(
+            Guid workflowVersionId,
+            Guid tenantId,
+            Guid stepId,
+            bool enabled,
+            CancellationToken cancellationToken = default)
+        {
+            var version = await GetDraftVersionAsync(workflowVersionId, tenantId, cancellationToken);
+            if (version == null)
+                return null;
+
+            var step = version.Steps.FirstOrDefault(s => s.Id == stepId);
+            if (step == null)
+                return null;
+
+            if (enabled)
+                step.Enable();
+            else
+                step.Disable();
+
+            await _dbContext.SaveChangesAsync(cancellationToken);
+            return step;
+        }
+
+        /// <inheritdoc />
+        public async Task<bool> RemoveStepAsync(
+            Guid workflowVersionId,
+            Guid tenantId,
+            Guid stepId,
+            CancellationToken cancellationToken = default)
+        {
+            var version = await GetDraftVersionAsync(workflowVersionId, tenantId, cancellationToken);
+            if (version == null)
+                return false;
+
+            var removed = version.RemoveStep(stepId);
+            if (removed)
+            {
+                version.RenumberSteps();
+                await _dbContext.SaveChangesAsync(cancellationToken);
+            }
+
+            return removed;
+        }
+
+        /// <inheritdoc />
+        public async Task<bool> ReorderStepsAsync(
+            Guid workflowVersionId,
+            Guid tenantId,
+            IReadOnlyList<Guid> stepIdsInOrder,
+            CancellationToken cancellationToken = default)
+        {
+            var version = await GetDraftVersionAsync(workflowVersionId, tenantId, cancellationToken);
+            if (version == null)
+                return false;
+
+            try
+            {
+                version.ApplyStepOrder(stepIdsInOrder);
+            }
+            catch (ArgumentException e)
+            {
+                throw new InvalidOperationException(
+                    "The step reorder must reference every step of the version exactly once.", e);
+            }
+
+            await _dbContext.SaveChangesAsync(cancellationToken);
+            return true;
+        }
+
+        /// <summary>
+        /// Loads the specified version when it is owned by the tenant and still a draft.
+        /// Returns null when the workflow/version is not found or not owned; throws
+        /// <see cref="InvalidOperationException"/> when the version is already published, because
+        /// published versions are immutable snapshots used by executions.
+        /// </summary>
+        private async Task<WorkflowVersion?> GetDraftVersionAsync(
+            Guid workflowVersionId,
+            Guid tenantId,
+            CancellationToken cancellationToken)
+        {
+            var version = await _dbContext.WorkflowVersions
+                .Include(v => v.Workflow)
+                .Include(v => v.Steps)
+                .FirstOrDefaultAsync(
+                    v => v.Id == workflowVersionId &&
+                         v.Workflow.TenantId == tenantId &&
+                         v.Workflow.DeletedAt == null,
+                    cancellationToken);
+
+            if (version == null)
+                return null;
+
+            if (version.IsPublished)
+                throw new InvalidOperationException(
+                    $"Workflow version {workflowVersionId} is published and cannot be modified");
+
             return version;
         }
     }

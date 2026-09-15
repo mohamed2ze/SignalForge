@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 using SignalForge.Domain.Models;
@@ -20,6 +21,12 @@ namespace SignalForge.Application.Services
         /// Returns null if not found or not owned by the tenant.
         /// </summary>
         Task<Workflow?> GetWorkflowByIdAsync(Guid workflowId, Guid tenantId, CancellationToken cancellationToken = default);
+
+        /// <summary>
+        /// Gets a single version (with its steps) for a tenant.
+        /// Returns null if not found or not owned by the tenant.
+        /// </summary>
+        Task<WorkflowVersion?> GetWorkflowVersionAsync(Guid versionId, Guid tenantId, CancellationToken cancellationToken = default);
 
         /// <summary>
         /// Creates a workflow and its initial draft version (v1).
@@ -51,5 +58,43 @@ namespace SignalForge.Application.Services
         /// Throws InvalidOperationException if the version is already published.
         /// </summary>
         Task<WorkflowVersion?> PublishVersionAsync(Guid workflowId, Guid versionId, Guid tenantId, CancellationToken cancellationToken = default);
+
+        /// <summary>
+        /// Adds a step to a draft version. When an explicit position collides with an existing step,
+        /// subsequent steps are shifted down. Returns null when the workflow/version is not found or
+        /// not owned by the tenant; throws InvalidOperationException when the version is published
+        /// (published versions are immutable), the step type is unknown, or the configuration fails
+        /// per-type validation.
+        /// </summary>
+        Task<WorkflowStep?> AddStepAsync(Guid workflowVersionId, Guid tenantId, AddStepCommand command, CancellationToken cancellationToken = default);
+
+        /// <summary>
+        /// Updates a step on a draft version (null command fields are left untouched).
+        /// Returns null when the workflow/version/step is not found or not owned by the tenant;
+        /// throws InvalidOperationException when the version is published or the new configuration
+        /// fails per-type validation.
+        /// </summary>
+        Task<WorkflowStep?> UpdateStepAsync(Guid workflowVersionId, Guid tenantId, Guid stepId, UpdateStepCommand command, CancellationToken cancellationToken = default);
+
+        /// <summary>
+        /// Enables or disables a step on a draft version. Returns null when not found / not owned;
+        /// throws InvalidOperationException when the version is published.
+        /// </summary>
+        Task<WorkflowStep?> SetStepEnabledAsync(Guid workflowVersionId, Guid tenantId, Guid stepId, bool enabled, CancellationToken cancellationToken = default);
+
+        /// <summary>
+        /// Removes a step from a draft version, renumbering the remaining steps contiguously.
+        /// Returns false when not found / not owned; throws InvalidOperationException when the
+        /// version is published.
+        /// </summary>
+        Task<bool> RemoveStepAsync(Guid workflowVersionId, Guid tenantId, Guid stepId, CancellationToken cancellationToken = default);
+
+        /// <summary>
+        /// Applies a new order to the draft version's steps (each id must belong to the version).
+        /// Returns false when the workflow/version is not found / not owned; throws
+        /// InvalidOperationException when the version is published or the order does not match the
+        /// version's step set.
+        /// </summary>
+        Task<bool> ReorderStepsAsync(Guid workflowVersionId, Guid tenantId, IReadOnlyList<Guid> stepIdsInOrder, CancellationToken cancellationToken = default);
     }
 }

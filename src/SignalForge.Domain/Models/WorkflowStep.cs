@@ -134,4 +134,17 @@ public class WorkflowStep
         IsEnabled = true;
         UpdatedAt = DateTime.UtcNow;
     }
+
+    /// <summary>
+    /// Moves the step to a new position in the version's sequence.
+    /// </summary>
+    /// <param name="stepNumber">The new 1-based step number</param>
+    public void MoveTo(int stepNumber)
+    {
+        if (stepNumber <= 0)
+            throw new ArgumentException("Step number must be positive", nameof(stepNumber));
+
+        StepNumber = stepNumber;
+        UpdatedAt = DateTime.UtcNow;
+    }
 }

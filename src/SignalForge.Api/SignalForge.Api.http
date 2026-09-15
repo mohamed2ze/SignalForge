@@ -1,6 +1,47 @@
-@SignalForge.Api_HostAddress = http://localhost:5127
+@host = http://localhost:5127
+@apiKey = <set your seeded API key here>
 
-GET {{SignalForge.Api_HostAddress}}/weatherforecast/
+### List workflows
+GET {{host}}/api/workflows
 Accept: application/json
+X-Api-Key: {{apiKey}}
 
-###
+### List executions
+GET {{host}}/api/executions
+Accept: application/json
+X-Api-Key: {{apiKey}}
+
+### Dead-letter queue counts
+GET {{host}}/api/dead-letter/counts
+Accept: application/json
+X-Api-Key: {{apiKey}}
+
+### Create a workflow (draft)
+POST {{host}}/api/workflows
+Content-Type: application/json
+X-Api-Key: {{apiKey}}
+
+{
+  "name": "Sample workflow",
+  "version": 1,
+  "steps": [
+    {
+      "type": "LogAudit",
+      "name": "Start",
+      "configuration": "{}"
+    }
+  ]
+}
+
+### Ingest an event (requires X-SignalForge-Timestamp + X-SignalForge-Signature headers
+### computed over the raw body with the tenant webhook signing secret — see EventSignatureVerifier).
+POST {{host}}/api/events
+Content-Type: application/json
+X-Api-Key: {{apiKey}}
+X-SignalForge-Timestamp: {{$datetime 'yyyy-MM-ddTHH:mm:ssZ'}}
+X-SignalForge-Signature: <hmac-sha256 of raw body>
+
+{
+  "type": "order.created",
+  "data": { "id": 1 }
+}

@@ -107,6 +107,61 @@ public class WorkflowVersion
     }
 
     /// <summary>
+    /// Removes a step from this version by id. Returns false when the step is not part of the version.
+    /// </summary>
+    /// <param name="stepId">The step id</param>
+    public bool RemoveStep(Guid stepId)
+    {
+        var step = Steps.FirstOrDefault(s => s.Id == stepId);
+        if (step == null)
+            return false;
+
+        Steps.Remove(step);
+        UpdatedAt = DateTime.UtcNow;
+        return true;
+    }
+
+    /// <summary>
+    /// Re-sequences all steps to a contiguous <c>1..n</c> numbering in their current order so a
+    /// removal or insertion never leaves a gap and execution order stays non-ambiguous.
+    /// </summary>
+    public void RenumberSteps()
+    {
+        var ordered = Steps.OrderBy(s => s.StepNumber).ToList();
+        for (var i = 0; i < ordered.Count; i++)
+        {
+            if (ordered[i].StepNumber != i + 1)
+                ordered[i].MoveTo(i + 1);
+        }
+
+        UpdatedAt = DateTime.UtcNow;
+    }
+
+    /// <summary>
+    /// Approves this step order for execution by applying the given order as the version's step
+    /// sequence (each entry must already belong to this version).
+    /// </summary>
+    /// <param name="stepIdsInOrder">The step ids in their new order</param>
+    /// <exception cref="ArgumentException">Thrown when the provided order does not match the version's steps</exception>
+    public void ApplyStepOrder(IReadOnlyCollection<Guid> stepIdsInOrder)
+    {
+        if (stepIdsInOrder.Count != Steps.Count)
+            throw new ArgumentException("Step order must include every step exactly once", nameof(stepIdsInOrder));
+
+        var byId = Steps.ToDictionary(s => s.Id);
+        var position = 1;
+        foreach (var stepId in stepIdsInOrder)
+        {
+            if (!byId.TryGetValue(stepId, out var step))
+                throw new ArgumentException($"Step {stepId} is not part of this version", nameof(stepIdsInOrder));
+
+            step.MoveTo(position++);
+        }
+
+        UpdatedAt = DateTime.UtcNow;
+    }
+
+    /// <summary>
     /// Updates the version description.
     /// </summary>
     /// <param name="description">The new description</param>

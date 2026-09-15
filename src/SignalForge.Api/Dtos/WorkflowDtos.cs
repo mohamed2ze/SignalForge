@@ -62,6 +62,79 @@ public class ExecuteWorkflowRequest
 }
 
 /// <summary>
+/// Request model for adding a step to a draft workflow version.
+/// </summary>
+public class AddWorkflowStepRequest
+{
+    /// <summary>
+    /// The 1-based position to insert at. Null appends at the end of the sequence.
+    /// </summary>
+    public int? StepNumber { get; set; }
+
+    /// <summary>
+    /// The step type (one of the <see cref="SignalForge.Domain.Enums.StepType"/> names).
+    /// </summary>
+    public string StepType { get; set; } = default!;
+
+    /// <summary>
+    /// JSON step configuration; validated against the step type's required fields.
+    /// </summary>
+    public string Configuration { get; set; } = default!;
+
+    /// <summary>
+    /// Optional human-readable step name.
+    /// </summary>
+    public string? Name { get; set; }
+
+    /// <summary>
+    /// Optional step description.
+    /// </summary>
+    public string? Description { get; set; }
+
+    /// <summary>
+    /// Whether the step starts enabled (default true).
+    /// </summary>
+    public bool IsEnabled { get; set; } = true;
+}
+
+/// <summary>
+/// Request model for updating a step on a draft workflow version (null fields are left untouched).
+/// </summary>
+public class UpdateWorkflowStepRequest
+{
+    /// <summary>
+    /// Optional new step name.
+    /// </summary>
+    public string? Name { get; set; }
+
+    /// <summary>
+    /// Optional new step description.
+    /// </summary>
+    public string? Description { get; set; }
+
+    /// <summary>
+    /// Optional new JSON configuration (validated against the step type).
+    /// </summary>
+    public string? Configuration { get; set; }
+
+    /// <summary>
+    /// Optional new enabled state.
+    /// </summary>
+    public bool? IsEnabled { get; set; }
+}
+
+/// <summary>
+/// Request model for reordering the steps of a draft workflow version.
+/// </summary>
+public class ReorderWorkflowStepsRequest
+{
+    /// <summary>
+    /// The version's step ids in their new order (each exactly once).
+    /// </summary>
+    public List<Guid> StepIdsInOrder { get; set; } = new();
+}
+
+/// <summary>
 /// Response model for workflow data.
 /// </summary>
 public class WorkflowDto
