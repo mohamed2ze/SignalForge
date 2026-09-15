@@ -106,7 +106,9 @@ There is no step-management API yet, so a workflow with real steps needs the ste
 `WorkflowSteps` for the version directly (or via `AddStep` in the application layer). After that:
 publish the version, create the execution via `POST /api/workflows/{id}/execute`, and the worker's
 execution pump advances it step by step (watch with `docker compose logs -f worker` or the local
-worker console).
+worker console). A failed step can be rescheduled on demand with
+`POST /api/workflows/{id}/executions/{executionId}/steps/{stepExecutionId}/retry` (409 while it is
+still running, waiting, or exhausted).
 
 ## Known gotchas
 

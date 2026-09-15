@@ -6,9 +6,10 @@ steps — HTTP webhooks, delays, conditionals, audit logging, notifications, eve
 retryable operations — with multi-tenancy, API-key authentication, a transactional outbox for
 reliable messaging, exponential-backoff retries, and a dead-letter queue.
 
-> **Status:** early-stage prototype. The engine is demonstrable end to end; several integrations
-> (message broker, notification delivery) are currently simulated. Converging them on real
-> implementations is the next planned step.
+> **Status:** early-stage prototype. The engine is demonstrable end to end; the cloud message
+> broker and email/SMS delivery are currently simulated, while webhook delivery, the outbox, and
+> workflow execution are real. Converging the simulated integrations on real implementations is
+> the next planned step.
 
 ---
 
@@ -22,8 +23,9 @@ SignalForge.Application     Business services, step processors, orchestrator, in
 SignalForge.Infrastructure  EF Core DbContext, entity mappings, migrations
 SignalForge.Api             ASP.NET Core Web API — events, workflows, dead-letter endpoints
 SignalForge.Worker          Background worker — polls the outbox and publishes pending messages
-tests/UnitTests             (work in progress — placeholder)
-tests/IntegrationTests      (work in progress — placeholder)
+tests/UnitTests             xunit — domain, security, service, and provider units
+tests/IntegrationTests      xunit — full-stack against SQL Server: auth, ingestion
+                             idempotency, outbox/dead-letter, rate limiting, isolation
 ```
 
 Data flow at a high level:
@@ -100,6 +102,7 @@ One command brings up SQL Server 2022, the API, and the outbox worker from clean
 ```bash
 # 1. Provide secrets (copy once, fill in your values — .env is gitignored)
 cp .env.example .env
+#    edit MSSQL_SA_PASSWORD, APP_DB_PASSWORD, SEED_API_KEY, SEED_SIGNING_SECRET as needed
 
 # 2. Start the stack
 docker compose up -d --build
@@ -130,9 +133,13 @@ curl -H "X-API-Key: <SEED_API_KEY from .env>" http://localhost:5089/api/workflow
 The API is protected by **API-key authentication**:
 
 - Header: `X-API-Key: <key>`
-- Keys are stored **SHA-256 hashed** and compared in constant time (`ApiKeyValidationService`).
+- Keys are stored as **versioned PBKDF2-SHA256 hashes** (random salt, constant-time compare in
+  `ApiKeyValidationService`); legacy unversioned hashes upgrade transparently on first login.
 - The tenant is resolved from the authenticated key and injected into identity claims
   (`tenant_id`, `api_key_id`); every entity is tenant-scoped.
+- Each request is additionally checked against a **per-API-key rate limit**
+  (`ApiKeyRateLimitMiddleware`). Default is 1000 requests/min per key, override via
+  `RateLimiting:PermitLimit`; the limiter is **in-memory and per process**.
 
 On first startup the API **seeds** a default tenant and a sample API key (idempotent). Generated
 credentials are **not** printed by default (the webhook signing secret must never reach logs). For
@@ -145,13 +152,17 @@ never duplicates them.
 
 | Step type | Behavior |
 |-----------|----------|
-| `HttpWebhook` | Makes an HTTP request to a configured endpoint |
+| `HttpWebhook` | Makes an HTTP request to a configured endpoint (https-only, SSRF-guarded, timeouts enforced) |
 | `Delay` | Waits for a configured duration |
 | `Conditional` | Evaluates a condition and branches (condition evaluation is currently a stub — always `true`; a real evaluator is planned) |
 | `LogAudit` | Writes an audit log entry |
-| `NotificationSimulation` | Simulates sending a notification (no real delivery yet) |
+| `NotificationSimulation` | Sends a notification via the provider registry (webhook delivers real HTTP; email/SMS are simulated) |
 | `EventEmission` | Emits a new event back into the platform |
-| `RetryableOperation` | Wraps an operation with retry logic (currently simulated by random failures) |
+| `RetryableOperation` | Wraps an operation with retry logic (exponential backoff; failures simulated via an optional `failureRate` knob) |
+
+Failed steps can be retried on demand:
+`POST /api/workflows/{workflowId}/executions/{executionId}/steps/{stepExecutionId}/retry` (409 while
+the step is still running, waiting, or has exhausted its attempts).
 
 ---
 

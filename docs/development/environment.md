@@ -70,7 +70,8 @@ every environment supply its own value without touching the repo:
 | Container override (any) | environment on the container | `Seed__DefaultApiKey=<key>` in your orchestrator |
 
 If unset everywhere, the seeder generates a **random** key via a cryptographic RNG. Either way the
-key is hashed (SHA-256) before storage; the plain text is never persisted in the DB. Generated
+key is hashed with **versioned PBKDF2-SHA256** (random salt, constant-time compare) before storage;
+the plain text is never persisted in the DB. Generated
 credentials are **not** logged by default — set `Seed:ExposeGeneratedSecrets=true` (local dev only)
 to print them once at seed time.
 
@@ -82,7 +83,7 @@ gitignored `.env` file (template: `.env.example`) and are injected as container 
 secret is committed:
 
 ```bash
-cp .env.example .env        # fill in MSSQL_SA_PASSWORD + APP_DB_PASSWORD + SEED_API_KEY
+cp .env.example .env        # fill in MSSQL_SA_PASSWORD + APP_DB_PASSWORD + SEED_API_KEY + SEED_SIGNING_SECRET
 docker compose up -d --build
 ```
 
