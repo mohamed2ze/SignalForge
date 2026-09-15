@@ -123,6 +123,14 @@ The Worker is a generic-host console app (`Microsoft.NET.Sdk.Worker`). Two notes
   - `MaxAttempts` (5): retries before a message is moved to `DeadLetterMessages`
   - `FailureThreshold` (3): consecutive failing cycles before the poll circuit opens
   - `MaxBackoffSeconds` (300): cap on the exponential backoff between cycles
+- Workflow execution advancement is paced by the `ExecutionPump` section:
+  - `BatchSize` (10): runnable executions advanced per cycle
+  - `PollIntervalSeconds` (2): idle poll delay
+  - `ClaimLeaseSeconds` (300): how long a claimed execution stays invisible to other workers
+- Shutdown behavior is governed by the `Worker` section:
+  - `GracefulShutdownTimeoutSeconds` (30): on stop, the worker accepts no new outbox/execution
+    cycles immediately but lets an in-flight cycle finish its current work up to this window before
+    hard-cancelling, so a restart never interrupts a send/advance mid-request.
 
 ## Prerequisites
 1. .NET 10 SDK installed

@@ -7,9 +7,9 @@ retryable operations — with multi-tenancy, API-key authentication, a transacti
 reliable messaging, exponential-backoff retries, and a dead-letter queue.
 
 > **Status:** early-stage prototype. The engine is demonstrable end to end; the cloud message
-> broker and email/SMS delivery are currently simulated, while webhook delivery, the outbox, and
-> workflow execution are real. Converging the simulated integrations on real implementations is
-> the next planned step.
+> broker is in-memory (a durable transport is a config-selectable swap-in), while webhook
+> delivery, the transactional outbox, workflow execution, and email/SMS notification transports
+> (SMTP + HTTP SMS gateway, fail-closed when unconfigured) are real implementations.
 
 ---
 
@@ -22,7 +22,8 @@ SignalForge.Domain          Entities, value objects, enums — no dependencies
 SignalForge.Application     Business services, step processors, orchestrator, ingestion, validation
 SignalForge.Infrastructure  EF Core DbContext, entity mappings, migrations
 SignalForge.Api             ASP.NET Core Web API — events, workflows, dead-letter endpoints
-SignalForge.Worker          Background worker — polls the outbox and publishes pending messages
+SignalForge.Worker          Background worker — polls the outbox, publishes pending messages,
+                            and advances running workflow executions (execution pump)
 tests/UnitTests             xunit — domain, security, service, and provider units
 tests/IntegrationTests      xunit — full-stack against SQL Server: auth, ingestion
                              idempotency, outbox/dead-letter, rate limiting, isolation
@@ -38,6 +39,12 @@ Client ──HTTP event──▶ API (EventsController, X-API-Key auth)
                                                                          │ publish
 Worker ──▶ workflow execution (sequential steps, retries, dead-letter on exhaustion)
 ```
+
+Execution orchestration is split across three focused services in `SignalForge.Application`:
+`WorkflowExecutionOrchestratorService` owns the lifecycle (start, read, retry eligibility),
+`WorkflowExecutionAdvancer` owns step advancement (the "what runs next" decision, dispatched
+through the step-processor registry), and `StepExecutionRetryPolicy` owns the shared
+retry/backoff/dead-letter decision used by both the worker and the HTTP retry endpoint.
 
 ---
 
@@ -79,17 +86,30 @@ dotnet ef database update --project src/SignalForge.Infrastructure --startup-pro
 dotnet run --project src/SignalForge.Api
 ```
 
-**Worker (outbox publisher):**
+**Worker (outbox publisher + execution pump):**
 
 ```bash
 dotnet run --project src/SignalForge.Worker
 ```
+
+The worker shuts down gracefully: on stop it stops accepting new outbox batches/execution
+advancement cycles immediately, but gives an in-flight cycle up to `Worker:GracefulShutdownTimeoutSeconds`
+(default 30) to finish its current work before it is hard-cancelled, so a restart never interrupts
+a send/advance mid-request.
 
 **Tests:**
 
 ```bash
 dotnet test SignalForge.slnx
 ```
+
+**Continuous-Integration gates** (`.github/workflows/ci.yml`) enforce, on every push/PR:
+
+- no committed secrets (secret-scan job),
+- a clean `dotnet build -warnaserror` and `dotnet format --verify-no-changes`,
+- the full unit + integration test suites,
+- a coverage gate: the integration suite runs with the XPlat collector (`codecoverage.runsettings`)
+  and `.github/scripts/enforce-coverage.sh` fails the pipeline if line coverage drops below **80%**.
 
 OpenAPI docs are available in Development at `/openapi/v1.json`.
 
@@ -124,6 +144,10 @@ curl -H "X-API-Key: <SEED_API_KEY from .env>" http://localhost:5089/api/workflow
   is up, DB not required) and `http://localhost:5089/health/ready` (readiness — 200 with a
   reachable database, 503 otherwise). Docker marks the API container healthy via the ready probe;
   the worker starts only after that gate.
+- Metrics: `http://localhost:5089/metrics` exposes Prometheus-formatted metrics — built-in HTTP
+  request metrics, .NET runtime metrics, and SignalForge gauges/counters (outbox pending, active
+  executions, dead-letter backlog, events ingested, rate-limit rejections). Scrape it from the
+  monitoring network only; disable via `Metrics:Enabled=false`.
 - Teardown: `docker compose down` (add `-v` to also drop the `mssql-data` volume).
 
 ---
@@ -139,7 +163,9 @@ The API is protected by **API-key authentication**:
   (`tenant_id`, `api_key_id`); every entity is tenant-scoped.
 - Each request is additionally checked against a **per-API-key rate limit**
   (`ApiKeyRateLimitMiddleware`). Default is 1000 requests/min per key, override via
-  `RateLimiting:PermitLimit`; the limiter is **in-memory and per process**.
+  `RateLimiting:PermitLimit`; the counter store is configurable via `RateLimiting:Store` —
+  `InMemory` (default, per process) or `Sql` (a single budget across every API node, using the
+  shared `RateLimitCounters` table).
 
 On first startup the API **seeds** a default tenant and a sample API key (idempotent). Generated
 credentials are **not** printed by default (the webhook signing secret must never reach logs). For
@@ -154,11 +180,16 @@ never duplicates them.
 |-----------|----------|
 | `HttpWebhook` | Makes an HTTP request to a configured endpoint (https-only, SSRF-guarded, timeouts enforced) |
 | `Delay` | Waits for a configured duration |
-| `Conditional` | Evaluates a condition and branches (condition evaluation is currently a stub — always `true`; a real evaluator is planned) |
+| `Conditional` | Evaluates a JSON-path condition expression against the execution context and routes to the true/false branch (`false` when evaluation errors) |
 | `LogAudit` | Writes an audit log entry |
-| `NotificationSimulation` | Sends a notification via the provider registry (webhook delivers real HTTP; email/SMS are simulated) |
+| `NotificationSimulation` | Sends a notification via the provider registry (webhook delivers real HTTP; email goes through SMTP via MailKit; SMS through the configured gateway — both fail closed when unconfigured) |
 | `EventEmission` | Emits a new event back into the platform |
-| `RetryableOperation` | Wraps an operation with retry logic (exponential backoff; failures simulated via an optional `failureRate` knob) |
+| `RetryableOperation` | Wraps an operation with retry logic (exponential backoff; the operation type is dispatched to a registered `IRetryableOperation` implementation; an unregistered type fails deterministically) |
+
+Steps are authored through the step-management API against a draft version: add
+(`POST .../versions/{versionId}/steps`), update (`PUT .../steps/{stepId}`), reorder
+(`PUT .../steps/reorder`), enable/disable (`POST .../steps/{stepId}/enable|disable`), and delete
+(`DELETE .../steps/{stepId}`); publish the version before it is executable.
 
 Failed steps can be retried on demand:
 `POST /api/workflows/{workflowId}/executions/{executionId}/steps/{stepExecutionId}/retry` (409 while

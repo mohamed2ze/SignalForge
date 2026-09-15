@@ -102,13 +102,25 @@ curl -i -X POST http://localhost:5127/api/events \
   --data-binary "$BODY"
 ```
 
-There is no step-management API yet, so a workflow with real steps needs the steps inserted into
-`WorkflowSteps` for the version directly (or via `AddStep` in the application layer). After that:
-publish the version, create the execution via `POST /api/workflows/{id}/execute`, and the worker's
+Steps are managed through the workflow step-authoring API against a **draft** version:
+
+- `POST /api/workflows` then `POST /api/workflows/{id}/versions` to create the draft
+- `POST /api/workflows/{id}/versions/{versionId}/steps` to add a step
+  (body: `stepType`, `configuration` as JSON, optional `stepNumber`/`name`/`description`/`isEnabled`)
+- `PUT  /api/workflows/{id}/versions/{versionId}/steps/{stepId}` to update a step
+- `POST /api/workflows/{id}/versions/{versionId}/steps/reorder` to reorder
+  (body: `stepIdsInOrder`)
+- `POST /api/workflows/{id}/versions/{versionId}/steps/{stepId}/enable` and `/disable`
+- `DELETE /api/workflows/{id}/versions/{versionId}/steps/{stepId}` to remove a step
+- `POST /api/workflows/{id}/versions/{versionId}/publish` — only **published** versions are executable
+
+After building and publishing the version, create the execution via
+`POST /api/workflows/{id}/execute` (body: `workflowVersionId`, `eventId`), and the worker's
 execution pump advances it step by step (watch with `docker compose logs -f worker` or the local
 worker console). A failed step can be rescheduled on demand with
 `POST /api/workflows/{id}/executions/{executionId}/steps/{stepExecutionId}/retry` (409 while it is
-still running, waiting, or exhausted).
+still running, waiting, or exhausted). Execution history for a tenant is available from
+`GET /api/executions` (paged/filtered).
 
 ## Known gotchas
 
