@@ -1,6 +1,7 @@
 using System.Security.Claims;
-using System.Threading.RateLimiting;
 using Microsoft.Extensions.Options;
+using SignalForge.Api.Observability;
+using SignalForge.Application.RateLimiting;
 
 namespace SignalForge.Api.Middleware;
 
@@ -10,35 +11,26 @@ namespace SignalForge.Api.Middleware;
 /// unauthenticated traffic shares one anonymous bucket. Health probes and any path that must
 /// never be throttled (liveness/readiness for orchestrators) are exempted.
 ///
-/// Uses the in-process <see cref="PartitionedRateLimiter{TResource}"/> (fixed-window). For a
-/// multi-instance deployment the window is enforced per process; a distributed store would be the
-/// next step if a hard cross-node cap is required.
+/// The counter itself lives behind <see cref="IRateLimiter"/>: the default store is in-process
+/// (per instance), while <c>RateLimiting:Store=Sql</c> switches to a shared SQL table so every
+/// API instance enforces one global budget. See <c>ApiKeyRateLimitOptions</c> for the knobs.
 /// </summary>
 public sealed class ApiKeyRateLimitMiddleware
 {
     private readonly RequestDelegate _next;
-    private readonly PartitionedRateLimiter<HttpContext> _limiter;
+    private readonly IRateLimiter _limiter;
+    private readonly TimeSpan _window;
+    private readonly long _permitLimit;
 
     public ApiKeyRateLimitMiddleware(
         RequestDelegate next,
+        IRateLimiter limiter,
         IOptions<ApiKeyRateLimitOptions> options)
     {
         _next = next;
-
-        var settings = options.Value;
-        var window = TimeSpan.FromSeconds(Math.Max(1, settings.WindowSeconds));
-        var permitLimit = Math.Max(1, settings.PermitLimit);
-
-        // The fixed window is shared across every request to the same key within the window.
-        _limiter = PartitionedRateLimiter.Create<HttpContext, string>(context =>
-            RateLimitPartition.GetFixedWindowLimiter(
-                partitionKey: context.User.FindFirstValue("api_key_id") ?? "anonymous",
-                factory: _ => new FixedWindowRateLimiterOptions
-                {
-                    PermitLimit = permitLimit,
-                    Window = window,
-                    QueueLimit = 0
-                }));
+        _limiter = limiter;
+        _window = TimeSpan.FromSeconds(Math.Max(1, options.Value.WindowSeconds));
+        _permitLimit = Math.Max(1, options.Value.PermitLimit);
     }
 
     public async Task InvokeAsync(HttpContext context)
@@ -50,10 +42,14 @@ public sealed class ApiKeyRateLimitMiddleware
             return;
         }
 
-        using var lease = await _limiter.AcquireAsync(context, cancellationToken: context.RequestAborted);
+        var partitionKey = context.User.FindFirstValue("api_key_id") ?? "anonymous";
+        var windowKey = RateLimitWindow.GetWindowKey(DateTimeOffset.UtcNow, _window);
 
-        if (!lease.IsAcquired)
+        var count = await _limiter.IncrementAsync(partitionKey, windowKey, context.RequestAborted);
+
+        if (count > _permitLimit)
         {
+            ApiMetrics.RateLimitRejections.Inc();
             context.Response.StatusCode = StatusCodes.Status429TooManyRequests;
             return;
         }
