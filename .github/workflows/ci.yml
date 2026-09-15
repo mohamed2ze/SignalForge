@@ -74,6 +74,33 @@ jobs:
         run: dotnet test SignalForge.slnx -c Release --no-build
 
   #--------------------------------------------------------------
+  # Coverage gate — fails the build if integration-suite line coverage
+  # drops below the configured threshold (80%). Runs after build-test
+  # because it reuses the restored packages and the same container host.
+  #--------------------------------------------------------------
+  coverage-gate:
+    name: Coverage gate (>=80% line)
+    needs: build-test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET 10
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+          cache: true
+          cache-dependency-path: '**/*.csproj'
+
+      - name: Restore
+        run: dotnet restore SignalForge.slnx
+
+      - name: Enforce coverage threshold
+        shell: bash
+        run: ./.github/scripts/enforce-coverage.sh 80 "$RUNNER_TEMP/coverage" Release
+
+  #--------------------------------------------------------------
   # Image publish — explicit only (workflow_dispatch or tag push).
   # Skipped entirely on normal pushes/PRs, so running CI never
   # requires registry credentials.
