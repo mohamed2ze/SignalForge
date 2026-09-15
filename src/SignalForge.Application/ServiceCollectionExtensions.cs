@@ -23,6 +23,8 @@ namespace SignalForge.Application
             services.AddScoped<IOutboxPublisher, OutboxPublisher>();
             services.AddScoped<IEventIngestionService, EventIngestionService>();
             services.AddScoped<IWorkflowExecutionOrchestratorService, WorkflowExecutionOrchestratorService>();
+            services.AddScoped<IWorkflowExecutionAdvancer, WorkflowExecutionAdvancer>();
+            services.AddScoped<IStepExecutionRetryPolicy, StepExecutionRetryPolicy>();
             services.AddScoped<IWorkflowService, WorkflowService>();
             services.AddScoped<IDeadLetterProcessingService, DeadLetterProcessingService>();
             services.AddScoped<IExecutionObservabilityService, ExecutionObservabilityService>();
@@ -49,9 +51,23 @@ namespace SignalForge.Application
             // (mirrors the notification-provider registry pattern).
             services.AddScoped<IStepProcessorRegistry, StepProcessorRegistry>();
 
-            // Notification providers, resolved by provider type through the registry;
-            // the webhook provider uses the typed HttpClientFactory so its handler is mockable in
-            // tests. Swap the simulated email/sms registrations for real adapters later.
+            // Retryable operations: dispatched by the RetryableOperationStepProcessor through the
+            // registry. Each registered operation is a real implementation selected by the step's
+            // operationType key.
+            services.AddSingleton<IRetryableOperationRegistry, RetryableOperationRegistry>();
+            services.AddSingleton<IRetryableOperation, EchoRetryableOperation>();
+
+            // Notification providers, resolved by provider type through the registry; the webhook provider
+            // uses the typed HttpClientFactory so its handler is mockable in tests. Email is
+            // delivered over real SMTP (MailKit); SMS over a real HTTP gateway; both transports
+            // fail closed when their options are unconfigured and never log message content.
+            services.AddOptions<SmtpNotificationOptions>();
+            services.AddOptions<SmsNotificationOptions>();
+
+            services.AddSingleton<IOutboundEmailTransport, MailKitEmailTransport>();
+            services.AddHttpClient<IOutboundSmsTransport, HttpSmsTransport>()
+                .ConfigureOutboundWebhookDefaults();
+
             services.AddOptions<OutboundWebhookOptions>();
             services.AddHttpClient<WebhookNotificationProvider>().ConfigureOutboundWebhookDefaults();
             services.AddHttpClient(Options.DefaultName).ConfigureOutboundWebhookDefaults();

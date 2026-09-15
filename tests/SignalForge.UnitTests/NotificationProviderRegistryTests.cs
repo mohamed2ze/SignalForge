@@ -6,10 +6,10 @@ namespace SignalForge.UnitTests;
 public class NotificationProviderRegistryTests
 {
     private static INotificationProvider Email() =>
-        new EmailNotificationProvider(NullLogger<EmailNotificationProvider>.Instance);
+        new EmailNotificationProvider(new RecordingEmailTransport());
 
     private static INotificationProvider Sms() =>
-        new SmsNotificationProvider(NullLogger<SmsNotificationProvider>.Instance);
+        new SmsNotificationProvider(new RecordingSmsTransport());
 
     [Fact]
     public void Resolves_providers_case_insensitively()

@@ -13,7 +13,7 @@ public class NotificationStepProcessorTests
     {
         ArgumentNullException.ThrowIfNull(providers);
         return new NotificationProviderRegistry(providers.Length == 0
-            ? [new EmailNotificationProvider(NullLogger<EmailNotificationProvider>.Instance)]
+            ? [new EmailNotificationProvider(new RecordingEmailTransport())]
             : providers);
     }
 
@@ -41,7 +41,7 @@ public class NotificationStepProcessorTests
     {
         var (execution, processor) = Create(
             """{"type":"email","recipient":"user@example.com","subject":"Your order","body":"It shipped"}""",
-            new EmailNotificationProvider(NullLogger<EmailNotificationProvider>.Instance));
+            new EmailNotificationProvider(new RecordingEmailTransport()));
 
         bool shouldContinue = await processor.ProcessAsync(execution, null);
 
@@ -60,7 +60,7 @@ public class NotificationStepProcessorTests
     {
         var (execution, processor) = Create(
             """{"type":"sms","recipient":"+15551234567","subject":null,"body":"Text only"}""",
-            new SmsNotificationProvider(NullLogger<SmsNotificationProvider>.Instance));
+            new SmsNotificationProvider(new RecordingSmsTransport()));
 
         bool shouldContinue = await processor.ProcessAsync(execution, null);
 
@@ -75,7 +75,7 @@ public class NotificationStepProcessorTests
     {
         var (execution, processor) = Create(
             """{"type":"email","provider":"sms","recipient":"+15551234567","body":"via sms instead"}""",
-            new SmsNotificationProvider(NullLogger<SmsNotificationProvider>.Instance));
+            new SmsNotificationProvider(new RecordingSmsTransport()));
 
         bool shouldContinue = await processor.ProcessAsync(execution, null);
 
@@ -89,7 +89,7 @@ public class NotificationStepProcessorTests
     {
         var (execution, processor) = Create(
             """{"type":"push","recipient":"dev@example.com","body":"unsupported channel"}""",
-            new EmailNotificationProvider(NullLogger<EmailNotificationProvider>.Instance));
+            new EmailNotificationProvider(new RecordingEmailTransport()));
 
         bool shouldContinue = await processor.ProcessAsync(execution, null);
 
@@ -105,7 +105,7 @@ public class NotificationStepProcessorTests
     {
         var (execution, processor) = Create(
             """{"type":"email","body":"no recipient"}""",
-            new EmailNotificationProvider(NullLogger<EmailNotificationProvider>.Instance));
+            new EmailNotificationProvider(new RecordingEmailTransport()));
 
         await Assert.ThrowsAsync<KeyNotFoundException>(() => processor.ProcessAsync(execution, null));
     }
@@ -115,7 +115,7 @@ public class NotificationStepProcessorTests
     {
         var (execution, processor) = Create(
             """{"type":"email","recipient":"user@example.com","body":"cancelled"}""",
-            new EmailNotificationProvider(NullLogger<EmailNotificationProvider>.Instance));
+            new EmailNotificationProvider(new RecordingEmailTransport()));
         using var cts = new CancellationTokenSource();
         cts.Cancel();
 

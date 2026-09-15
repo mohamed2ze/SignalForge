@@ -1,43 +1,39 @@
 using System;
 using System.Threading;
 using System.Threading.Tasks;
-using Microsoft.Extensions.Logging;
 
 namespace SignalForge.Application.Notifications;
 
 /// <summary>
-/// Simulated email provider. Does not talk to an SMTP server: it produces a provider-assigned
-/// delivery id and a structured log line, standing in for a real email transport behind the same
-/// contract. Swap the registration for a real adapter later without touching step configurations.
+/// Real email provider: delegates to an <see cref="IOutboundEmailTransport"/> (SMTP in production)
+/// and returns the transport-assigned delivery id. Logs the recipient and delivery id only —
+/// subjects and bodies are never written to logs.
 /// </summary>
 public class EmailNotificationProvider : INotificationProvider
 {
-    private readonly ILogger<EmailNotificationProvider> _logger;
+    private readonly IOutboundEmailTransport _transport;
 
-    public EmailNotificationProvider(ILogger<EmailNotificationProvider> logger)
+    public EmailNotificationProvider(IOutboundEmailTransport transport)
     {
-        _logger = logger;
+        _transport = transport;
     }
 
     public string ProviderType => "email";
 
-    public Task<NotificationDeliveryResult> SendAsync(
+    public async Task<NotificationDeliveryResult> SendAsync(
         NotificationMessage message,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(message);
         cancellationToken.ThrowIfCancellationRequested();
 
-        var deliveryId = $"email-{Guid.NewGuid():N}";
+        var deliveryId = await _transport.SendAsync(
+            message.Recipient, message.Subject, message.Body, cancellationToken);
 
-        _logger.LogInformation(
-            "Email notification delivered to {Recipient} with deliveryId {deliveryId} | Subject: {Subject}",
-            message.Recipient, deliveryId, message.Subject ?? "(no subject)");
-
-        return Task.FromResult(new NotificationDeliveryResult(
+        return new NotificationDeliveryResult(
             deliveryId,
             ProviderType,
             NotificationDeliveryStatus.Accepted,
-            DateTime.UtcNow));
+            DateTime.UtcNow);
     }
 }

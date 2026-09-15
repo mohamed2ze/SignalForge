@@ -1,42 +1,39 @@
 using System;
 using System.Threading;
 using System.Threading.Tasks;
-using Microsoft.Extensions.Logging;
 
 namespace SignalForge.Application.Notifications;
 
 /// <summary>
-/// Simulated SMS provider. Produces a provider-assigned delivery id and a structured log line as a
-/// stand-in for a real SMS gateway behind the same contract.
+/// Real SMS provider: delegates to an <see cref="IOutboundSmsTransport"/> (HTTP gateway in
+/// production) and returns the gateway-assigned delivery id. Logs the recipient and delivery id
+/// only — message bodies are never written to logs.
 /// </summary>
 public class SmsNotificationProvider : INotificationProvider
 {
-    private readonly ILogger<SmsNotificationProvider> _logger;
+    private readonly IOutboundSmsTransport _transport;
 
-    public SmsNotificationProvider(ILogger<SmsNotificationProvider> logger)
+    public SmsNotificationProvider(IOutboundSmsTransport transport)
     {
-        _logger = logger;
+        _transport = transport;
     }
 
     public string ProviderType => "sms";
 
-    public Task<NotificationDeliveryResult> SendAsync(
+    public async Task<NotificationDeliveryResult> SendAsync(
         NotificationMessage message,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(message);
         cancellationToken.ThrowIfCancellationRequested();
 
-        var deliveryId = $"sms-{Guid.NewGuid():N}";
+        var deliveryId = await _transport.SendAsync(
+            message.Recipient, message.Body, cancellationToken);
 
-        _logger.LogInformation(
-            "SMS notification delivered to {Recipient} with deliveryId {deliveryId} | Body: {Body}",
-            message.Recipient, deliveryId, message.Body);
-
-        return Task.FromResult(new NotificationDeliveryResult(
+        return new NotificationDeliveryResult(
             deliveryId,
             ProviderType,
             NotificationDeliveryStatus.Accepted,
-            DateTime.UtcNow));
+            DateTime.UtcNow);
     }
 }
