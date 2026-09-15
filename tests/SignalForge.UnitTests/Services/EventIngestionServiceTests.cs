@@ -15,7 +15,7 @@ public class EventIngestionServiceTests
     private static (EventIngestionService Service, SignalForgeDbContext Db) Create()
     {
         var db = CreateDb();
-        return (new EventIngestionService(db, new RecordingPublisher()), db);
+        return (new EventIngestionService(db, new RecordingPublisher(), new NeverUniqueViolationDetector()), db);
     }
 
     [Fact]
@@ -78,7 +78,7 @@ public class EventIngestionServiceTests
     {
         var publisher = new RecordingPublisher();
         var db = CreateDb();
-        var service = new EventIngestionService(db, publisher);
+        var service = new EventIngestionService(db, publisher, new NeverUniqueViolationDetector());
 
         await service.PublishAsync(Guid.NewGuid(), "order.created", """{"a":1}""");
 

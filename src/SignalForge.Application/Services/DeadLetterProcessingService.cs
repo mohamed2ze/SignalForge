@@ -13,10 +13,14 @@ namespace SignalForge.Application.Services;
 public class DeadLetterProcessingService : IDeadLetterProcessingService
 {
     private readonly ISignalForgeDbContext _dbContext;
+    private readonly IUniqueViolationDetector _uniqueViolationDetector;
 
-    public DeadLetterProcessingService(ISignalForgeDbContext dbContext)
+    public DeadLetterProcessingService(
+        ISignalForgeDbContext dbContext,
+        IUniqueViolationDetector uniqueViolationDetector)
     {
         _dbContext = dbContext;
+        _uniqueViolationDetector = uniqueViolationDetector;
     }
 
     /// <inheritdoc />
@@ -135,7 +139,7 @@ public class DeadLetterProcessingService : IDeadLetterProcessingService
         {
             await _dbContext.SaveChangesAsync(cancellationToken);
         }
-        catch (DbUpdateException ex) when (UniqueKeyViolation.IsUniqueViolation(ex))
+        catch (Exception ex) when (_uniqueViolationDetector.IsUniqueViolation(ex))
         {
             // Two concurrent replays of the same dead letter both passed the in-flight check
             // above; the filtered unique index let only one requeue through. The

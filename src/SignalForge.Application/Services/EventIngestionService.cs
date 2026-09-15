@@ -15,11 +15,16 @@ public class EventIngestionService : IEventIngestionService
 {
     private readonly ISignalForgeDbContext _dbContext;
     private readonly IOutboxPublisher _outboxPublisher;
+    private readonly IUniqueViolationDetector _uniqueViolationDetector;
 
-    public EventIngestionService(ISignalForgeDbContext dbContext, IOutboxPublisher outboxPublisher)
+    public EventIngestionService(
+        ISignalForgeDbContext dbContext,
+        IOutboxPublisher outboxPublisher,
+        IUniqueViolationDetector uniqueViolationDetector)
     {
         _dbContext = dbContext;
         _outboxPublisher = outboxPublisher;
+        _uniqueViolationDetector = uniqueViolationDetector;
     }
 
     /// <inheritdoc />
@@ -60,7 +65,7 @@ public class EventIngestionService : IEventIngestionService
         {
             await _dbContext.SaveChangesAsync(cancellationToken);
         }
-        catch (DbUpdateException ex) when (UniqueKeyViolation.IsUniqueViolation(ex))
+        catch (Exception ex) when (_uniqueViolationDetector.IsUniqueViolation(ex))
         {
             // Two concurrent POSTs with the same (TenantId, ExternalEventId) both passed the
             // check above; the unique index let only one insert through. The whole batch was

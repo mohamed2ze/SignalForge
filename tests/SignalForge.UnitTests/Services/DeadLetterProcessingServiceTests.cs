@@ -37,7 +37,7 @@ public class DeadLetterProcessingServiceTests
         db.DeadLetterMessages.AddRange(b);
         await db.SaveChangesAsync();
 
-        return (new DeadLetterProcessingService(db), a, b);
+        return (new DeadLetterProcessingService(db, new NeverUniqueViolationDetector()), a, b);
     }
 
     [Fact]
