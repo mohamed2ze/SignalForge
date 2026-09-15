@@ -25,8 +25,8 @@ public class WorkflowExecutionOrchestratorServiceTests
         // notification step with no "recipient" throws KeyNotFoundException deterministically.
         var registry = new NotificationProviderRegistry(
         [
-            new EmailNotificationProvider(NullLogger<EmailNotificationProvider>.Instance),
-            new SmsNotificationProvider(NullLogger<SmsNotificationProvider>.Instance)
+            new EmailNotificationProvider(new RecordingEmailTransport()),
+            new SmsNotificationProvider(new RecordingSmsTransport())
         ]);
         var notification = new NotificationStepProcessor(
             registry,
@@ -36,6 +36,22 @@ public class WorkflowExecutionOrchestratorServiceTests
         [
             delay, conditional, logAudit, notification
         ]);
+    }
+
+    /// <summary>
+    /// Builds the decomposable orchestrator graph (orchestrator + advancer + shared retry policy)
+    /// over one <see cref="SignalForgeDbContext"/>, exactly as DI wires them in production.
+    /// </summary>
+    private static WorkflowExecutionOrchestratorService CreateOrchestrator(SignalForgeDbContext db)
+    {
+        var retryPolicy = new StepExecutionRetryPolicy(
+            db, NullLogger<StepExecutionRetryPolicy>.Instance);
+        var advancer = new WorkflowExecutionAdvancer(
+            db, BuildProcessorRegistry(), retryPolicy,
+            NullLogger<WorkflowExecutionAdvancer>.Instance);
+        return new WorkflowExecutionOrchestratorService(
+            db, advancer, retryPolicy,
+            NullLogger<WorkflowExecutionOrchestratorService>.Instance);
     }
 
     private static async Task<(Guid WorkflowId, Guid VersionId, Guid EventId, Guid TenantId)> SeedAsync(
@@ -69,8 +85,7 @@ public class WorkflowExecutionOrchestratorServiceTests
             version.AddStep(1, nameof(StepType.Delay), """{"seconds":0}""", "gap-1");
             version.AddStep(2, nameof(StepType.Delay), """{"seconds":0}""", "gap-2");
         });
-        var orchestrator = new WorkflowExecutionOrchestratorService(
-            db, BuildProcessorRegistry(), NullLogger<WorkflowExecutionOrchestratorService>.Instance);
+        var orchestrator = CreateOrchestrator(db);
 
         var execution = await orchestrator.StartWorkflowExecutionAsync(workflowId, versionId, eventId, tenantId);
 
@@ -99,8 +114,7 @@ public class WorkflowExecutionOrchestratorServiceTests
             version.AddStep(1, nameof(StepType.Conditional),
                 """{"expression":"$.event.type == 'order.created'","trueStep":4,"falseStep":5}""");
         });
-        var orchestrator = new WorkflowExecutionOrchestratorService(
-            db, BuildProcessorRegistry(), NullLogger<WorkflowExecutionOrchestratorService>.Instance);
+        var orchestrator = CreateOrchestrator(db);
 
         var execution = await orchestrator.StartWorkflowExecutionAsync(workflowId, versionId, eventId, tenantId);
 
@@ -124,8 +138,7 @@ public class WorkflowExecutionOrchestratorServiceTests
                     """{"expression":"$.event.type == 'order.created'","trueStep":4,"falseStep":5}""");
             },
             eventType: "order.cancelled");
-        var orchestrator = new WorkflowExecutionOrchestratorService(
-            db, BuildProcessorRegistry(), NullLogger<WorkflowExecutionOrchestratorService>.Instance);
+        var orchestrator = CreateOrchestrator(db);
 
         var execution = await orchestrator.StartWorkflowExecutionAsync(workflowId, versionId, eventId, tenantId);
 
@@ -143,8 +156,7 @@ public class WorkflowExecutionOrchestratorServiceTests
         {
             version.AddStep(1, nameof(StepType.LogAudit), """{"message":"hi","logLevel":"information"}""");
         });
-        var orchestrator = new WorkflowExecutionOrchestratorService(
-            db, BuildProcessorRegistry(), NullLogger<WorkflowExecutionOrchestratorService>.Instance);
+        var orchestrator = CreateOrchestrator(db);
 
         var execution = await orchestrator.StartWorkflowExecutionAsync(workflowId, versionId, eventId, tenantId);
 
@@ -170,8 +182,7 @@ public class WorkflowExecutionOrchestratorServiceTests
                     """{"expression":"$.event.type == 'order.created' and $.event.payload.orderId == 'ORD-1' and $.output.1 == 'Audit logged: hi'","trueStep":9,"falseStep":2}""");
             },
             eventPayload: """{"orderId":"ORD-1"}""");
-        var orchestrator = new WorkflowExecutionOrchestratorService(
-            db, BuildProcessorRegistry(), NullLogger<WorkflowExecutionOrchestratorService>.Instance);
+        var orchestrator = CreateOrchestrator(db);
 
         var execution = await orchestrator.StartWorkflowExecutionAsync(workflowId, versionId, eventId, tenantId);
 
@@ -194,8 +205,7 @@ public class WorkflowExecutionOrchestratorServiceTests
             version.AddStep(1, nameof(StepType.Delay), """{"seconds":0}""");
         });
 
-        var orchestrator = new WorkflowExecutionOrchestratorService(
-            db, BuildProcessorRegistry(), NullLogger<WorkflowExecutionOrchestratorService>.Instance);
+        var orchestrator = CreateOrchestrator(db);
 
         await Assert.ThrowsAsync<InvalidOperationException>(() =>
             orchestrator.StartWorkflowExecutionAsync(workflowId, versionId, eventId, Guid.NewGuid()));
@@ -212,8 +222,7 @@ public class WorkflowExecutionOrchestratorServiceTests
         var db = CreateDb();
         var (workflowId, versionId, eventId, tenantId) = await SeedAsync(
             db, version => version.AddStep(1, nameof(StepType.Delay), """{"seconds":0}"""), publish: false);
-        var orchestrator = new WorkflowExecutionOrchestratorService(
-            db, BuildProcessorRegistry(), NullLogger<WorkflowExecutionOrchestratorService>.Instance);
+        var orchestrator = CreateOrchestrator(db);
 
         var ex = await Assert.ThrowsAsync<InvalidOperationException>(() =>
             orchestrator.StartWorkflowExecutionAsync(workflowId, versionId, eventId, tenantId));
@@ -233,8 +242,7 @@ public class WorkflowExecutionOrchestratorServiceTests
         {
             version.AddStep(1, nameof(StepType.NotificationSimulation), """{"type":"email"}""");
         });
-        var orchestrator = new WorkflowExecutionOrchestratorService(
-            db, BuildProcessorRegistry(), NullLogger<WorkflowExecutionOrchestratorService>.Instance);
+        var orchestrator = CreateOrchestrator(db);
 
         var execution = await orchestrator.StartWorkflowExecutionAsync(workflowId, versionId, eventId, tenantId);
 
@@ -269,8 +277,7 @@ public class WorkflowExecutionOrchestratorServiceTests
         {
             version.AddStep(1, nameof(StepType.NotificationSimulation), """{"type":"email"}""");
         });
-        var orchestrator = new WorkflowExecutionOrchestratorService(
-            db, BuildProcessorRegistry(), NullLogger<WorkflowExecutionOrchestratorService>.Instance);
+        var orchestrator = CreateOrchestrator(db);
 
         var execution = await orchestrator.StartWorkflowExecutionAsync(workflowId, versionId, eventId, tenantId);
 
@@ -304,8 +311,7 @@ public class WorkflowExecutionOrchestratorServiceTests
         {
             version.AddStep(1, nameof(StepType.NotificationSimulation), """{"type":"email"}""");
         });
-        var orchestrator = new WorkflowExecutionOrchestratorService(
-            db, BuildProcessorRegistry(), NullLogger<WorkflowExecutionOrchestratorService>.Instance);
+        var orchestrator = CreateOrchestrator(db);
 
         var execution = await orchestrator.StartWorkflowExecutionAsync(workflowId, versionId, eventId, tenantId);
 
@@ -339,8 +345,7 @@ public class WorkflowExecutionOrchestratorServiceTests
         {
             version.AddStep(1, nameof(StepType.Delay), """{"seconds":0}""", "step-1");
         });
-        var orchestrator = new WorkflowExecutionOrchestratorService(
-            db, BuildProcessorRegistry(), NullLogger<WorkflowExecutionOrchestratorService>.Instance);
+        var orchestrator = CreateOrchestrator(db);
 
         var execution = await orchestrator.StartWorkflowExecutionAsync(workflowId, versionId, eventId, tenantId);
 

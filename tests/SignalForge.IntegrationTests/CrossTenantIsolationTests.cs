@@ -116,8 +116,9 @@ public class CrossTenantIsolationTests : ApiTestBase
 
             using var ctx = new SignalForgeDbContext(options);
             var outboxPublisher = new OutboxPublisher(ctx);
-            var ingestA = new EventIngestionService(ctx, outboxPublisher);
-            var ingestB = new EventIngestionService(ctx, outboxPublisher);
+            var detector = new SqlUniqueKeyViolationDetector();
+            var ingestA = new EventIngestionService(ctx, outboxPublisher, detector);
+            var ingestB = new EventIngestionService(ctx, outboxPublisher, detector);
 
             var createdA = await ingestA.IngestEventAsync(
                 TenantA, "ext-l4-1", "order.created", DateTime.UtcNow, "{\"orderId\":1}");
@@ -166,8 +167,14 @@ public class CrossTenantIsolationTests : ApiTestBase
             }
 
             using var readCtx = new SignalForgeDbContext(options);
+            var readRetryPolicy = new StepExecutionRetryPolicy(
+                readCtx, NullLogger<StepExecutionRetryPolicy>.Instance);
+            var readAdvancer = new WorkflowExecutionAdvancer(
+                readCtx, new StepProcessorRegistry([]), readRetryPolicy,
+                NullLogger<WorkflowExecutionAdvancer>.Instance);
             var orchestratorA = new WorkflowExecutionOrchestratorService(
-                readCtx, new StepProcessorRegistry([]), NullLogger<WorkflowExecutionOrchestratorService>.Instance);
+                readCtx, readAdvancer, readRetryPolicy,
+                NullLogger<WorkflowExecutionOrchestratorService>.Instance);
 
             Assert.NotNull(await orchestratorA.GetWorkflowExecutionByIdAsync(executionId, TenantA));
             Assert.Null(await orchestratorA.GetWorkflowExecutionByIdAsync(executionId, TenantB));
@@ -199,8 +206,9 @@ public class CrossTenantIsolationTests : ApiTestBase
             }
 
             using var readCtx = new SignalForgeDbContext(options);
-            var serviceA = new DeadLetterProcessingService(readCtx);
-            var serviceB = new DeadLetterProcessingService(readCtx);
+            var detector = new SqlUniqueKeyViolationDetector();
+            var serviceA = new DeadLetterProcessingService(readCtx, detector);
+            var serviceB = new DeadLetterProcessingService(readCtx, detector);
 
             Assert.NotEmpty(await serviceA.GetDeadLettersAsync(TenantA));
 
