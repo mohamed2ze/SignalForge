@@ -1,5 +1,7 @@
 using Microsoft.EntityFrameworkCore;
+using SignalForge.Application.Broker;
 using SignalForge.Application.Data;
+using SignalForge.Application.RateLimiting;
 using SignalForge.Domain;
 using SignalForge.Domain.Models;
 using SignalForge.Infrastructure.Persistence.Mappings;
@@ -29,6 +31,8 @@ public class SignalForgeDbContext : DbContext, ISignalForgeDbContext
     public DbSet<OutboxMessage> OutboxMessages => Set<OutboxMessage>();
     public DbSet<DeadLetterMessage> DeadLetterMessages => Set<DeadLetterMessage>();
     public DbSet<TenantWebhookSigningSetting> TenantWebhookSigningSettings => Set<TenantWebhookSigningSetting>();
+    public DbSet<BrokerMessage> BrokerMessages => Set<BrokerMessage>();
+    public DbSet<RateLimitCounter> RateLimitCounters => Set<RateLimitCounter>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

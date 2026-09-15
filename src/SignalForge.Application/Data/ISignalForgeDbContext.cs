@@ -1,6 +1,8 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using SignalForge.Application.Broker;
+using SignalForge.Application.RateLimiting;
 using SignalForge.Domain.Models;
 
 namespace SignalForge.Application.Data;
@@ -26,6 +28,8 @@ public interface ISignalForgeDbContext
     DbSet<OutboxMessage> OutboxMessages { get; }
     DbSet<DeadLetterMessage> DeadLetterMessages { get; }
     DbSet<TenantWebhookSigningSetting> TenantWebhookSigningSettings { get; }
+    DbSet<BrokerMessage> BrokerMessages { get; }
+    DbSet<RateLimitCounter> RateLimitCounters { get; }
 
     Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
 }

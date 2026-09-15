@@ -1,12 +1,14 @@
 using System.Threading;
 using System.Threading.Tasks;
+using SignalForge.Application.Broker;
 
 namespace SignalForge.Worker.Services
 {
     /// <summary>
     /// Interface for sending outbox messages to their destination.
-    /// In a real implementation, this would send to a message broker like RabbitMQ, Kafka, etc.
-    /// For this implementation, we'll simulate sending by logging.
+    /// Implementations publish through an <see cref="IMessageBroker"/> so the worker can hand
+    /// claimed messages to the broker transport (in-memory for local dev; durable transports
+    /// are a swap-in behind the same broker abstraction).
     /// </summary>
     public interface IOutboxMessageSender
     {

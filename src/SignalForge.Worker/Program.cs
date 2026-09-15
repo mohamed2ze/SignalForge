@@ -1,11 +1,9 @@
 using Microsoft.EntityFrameworkCore;
 using SignalForge.Application;
-using SignalForge.Application.Broker;
 using SignalForge.Application.Data;
 using SignalForge.Application.Security;
 using SignalForge.Application.Services;
 using SignalForge.Domain;
-using SignalForge.Infrastructure.Broker;
 using SignalForge.Infrastructure.Data;
 using SignalForge.Worker;
 using SignalForge.Worker.Services;
@@ -29,6 +27,10 @@ if (builder.Configuration.GetValue<bool>("Logging:Console:Json", false))
 builder.Services.Configure<OutboxOptions>(
     builder.Configuration.GetSection("Outbox"));
 
+// Host-level options (graceful shutdown / drain window shared across loops)
+builder.Services.Configure<HostingOptions>(
+    builder.Configuration.GetSection("Worker"));
+
 // Add database context
 builder.Services.AddDbContext<SignalForgeDbContext>(options =>
     options.UseSqlServer(
@@ -40,6 +42,9 @@ builder.Services.AddScoped<ISignalForgeDbContext, SignalForgeDbContext>();
 // Add application services: workflow orchestration + step processors (needed by the execution
 // pump's per-cycle scope) and the notification providers.
 builder.Services.AddApplicationServices();
+
+// Persistence-context services that live in the Infrastructure layer but back Application ports.
+builder.Services.AddScoped<IUniqueViolationDetector, SqlUniqueKeyViolationDetector>();
 
 // Outbound webhook SSRF/timeout/size settings (defaults are strict; override per environment).
 builder.Services.AddOptions<OutboundWebhookOptions>()
@@ -57,11 +62,8 @@ builder.Services.Configure<ExecutionPumpOptions>(
     builder.Configuration.GetSection("ExecutionPump"));
 builder.Services.AddSingleton<IWorkflowExecutionPump, WorkflowExecutionPump>();
 
-// Register the in-memory message broker as the Development default (singleton — it is the
-// transport store). Swap this registration for a real adapter (Kafka/RabbitMQ/HTTP) later.
-builder.Services.AddSingleton<InMemoryMessageBroker>();
-builder.Services.AddSingleton<IMessageBroker>(sp => sp.GetRequiredService<InMemoryMessageBroker>());
-builder.Services.AddSingleton<IBrokerAudit>(sp => sp.GetRequiredService<InMemoryMessageBroker>());
+// Message broker transport (Broker:Provider selects InMemory or durable Sql backend).
+builder.Services.AddMessageBroker(builder.Configuration);
 
 // Add hosted services
 builder.Services.AddHostedService<Worker>();
