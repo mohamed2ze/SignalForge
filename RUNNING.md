@@ -1,7 +1,7 @@
 # Running SignalForge
 
-Two supported ways to run the platform. Option A is the recommended one-command flow; Option B
-runs the API and worker natively against your own SQL Server container.
+Two ways to run it. Option A is the one-command path (Docker Compose, full stack); Option B runs
+the API and worker natively against your own SQL Server container.
 
 ## Option A — Docker Compose (full stack, one command)
 

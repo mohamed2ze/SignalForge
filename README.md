@@ -2,8 +2,8 @@
 
 **SignalForge** is an event-driven **workflow orchestration platform**. Tenants define, version,
 and execute workflows that are triggered by incoming events. Workflows are composed of sequential
-steps — HTTP webhooks, delays, conditionals, audit logging, notifications, event emission, and
-retryable operations — with multi-tenancy, API-key authentication, a transactional outbox for
+steps (HTTP webhooks, delays, conditionals, audit logging, notifications, event emission, and
+retryable operations), with multi-tenancy, API-key authentication, a transactional outbox for
 reliable messaging, exponential-backoff retries, and a dead-letter queue.
 
 > **Status:** early-stage prototype. The engine is demonstrable end to end; the cloud message
@@ -85,7 +85,7 @@ dotnet ef database update --project src/SignalForge.Infrastructure --startup-pro
 
 ## Running
 
-**API host** (`http://localhost:5xxx` — see `src/SignalForge.Api/Properties/launchSettings.json`):
+**API host** (`http://localhost:5xxx`, see `src/SignalForge.Api/Properties/launchSettings.json`):
 
 ```bash
 dotnet run --project src/SignalForge.Api

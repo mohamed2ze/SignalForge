@@ -1,6 +1,6 @@
 # Development Environment
 
-## System Information
+## Machine notes
 - **OS**: Ubuntu 26.04
 - **.NET SDK**: Version 10.0.111
 - **.NET Runtime**: Version 10.0.11
