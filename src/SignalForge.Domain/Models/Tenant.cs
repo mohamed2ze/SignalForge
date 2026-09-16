@@ -1,9 +1,5 @@
 namespace SignalForge.Domain.Models;
 
-/// <summary>
-/// Represents a tenant in the multi-tenant SignalForge platform.
-/// Each tenant has isolated data, API keys, workflows, and configuration.
-/// </summary>
 public class Tenant
 {
     public Guid Id { get; private set; }
@@ -30,12 +26,6 @@ public class Tenant
         CreatedAt = DateTime.UtcNow;
     }
 
-    /// <summary>
-    /// Creates a new tenant.
-    /// </summary>
-    /// <param name="name">The tenant name</param>
-    /// <param name="description">Optional description</param>
-    /// <returns>A new Tenant instance</returns>
     public static Tenant Create(string name, string? description = null)
     {
         if (string.IsNullOrWhiteSpace(name))
@@ -44,14 +34,6 @@ public class Tenant
         return new Tenant(Guid.NewGuid(), name.Trim(), description?.Trim());
     }
 
-    /// <summary>
-    /// Creates a new tenant with a well-known, explicitly supplied id.
-    /// Used for seeding data (e.g. a default tenant) where the id must be stable.
-    /// </summary>
-    /// <param name="id">The tenant id</param>
-    /// <param name="name">The tenant name</param>
-    /// <param name="description">Optional description</param>
-    /// <returns>A new Tenant instance</returns>
     public static Tenant CreateWithId(Guid id, string name, string? description = null)
     {
         if (id == Guid.Empty)
@@ -63,11 +45,6 @@ public class Tenant
         return new Tenant(id, name.Trim(), description?.Trim());
     }
 
-    /// <summary>
-    /// Updates the tenant information.
-    /// </summary>
-    /// <param name="name">The new tenant name</param>
-    /// <param name="description">Optional new description</param>
     public void UpdateInfo(string name, string? description = null)
     {
         if (string.IsNullOrWhiteSpace(name))
@@ -78,9 +55,6 @@ public class Tenant
         UpdatedAt = DateTime.UtcNow;
     }
 
-    /// <summary>
-    /// Deactivates the tenant (soft delete).
-    /// </summary>
     public void Deactivate()
     {
         IsActive = false;
@@ -88,9 +62,6 @@ public class Tenant
         UpdatedAt = DateTime.UtcNow;
     }
 
-    /// <summary>
-    /// Reactivates the tenant.
-    /// </summary>
     public void Reactivate()
     {
         IsActive = true;

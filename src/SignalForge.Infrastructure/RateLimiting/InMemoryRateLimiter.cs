@@ -13,7 +13,6 @@ public sealed class InMemoryRateLimiter : IRateLimiter
 {
     private readonly ConcurrentDictionary<(string PartitionKey, long WindowKey), long> _counters = new();
 
-    /// <inheritdoc />
     public Task<long> IncrementAsync(
         string partitionKey,
         long windowKey,
@@ -30,7 +29,6 @@ public sealed class InMemoryRateLimiter : IRateLimiter
         return Task.FromResult(count);
     }
 
-    /// <inheritdoc />
     public Task<long> GetCountAsync(
         string partitionKey,
         long windowKey,

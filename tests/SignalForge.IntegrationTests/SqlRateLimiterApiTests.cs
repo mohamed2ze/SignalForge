@@ -73,7 +73,6 @@ public sealed class SqlRateLimiterApiTests
             $"expected ≥{PermitLimit + 1} across windows, got {counts.Sum()}");
     }
 
-    /// <summary>Hosts the real API with the SQL counter store and a small fixed-window budget.</summary>
     private sealed class SqlStoreFactory : WebApplicationFactory<Program>
     {
         private readonly MsSqlContainerFixture _database;

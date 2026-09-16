@@ -159,9 +159,6 @@ public class DeadLetterMessage
         LastReplayedAt = previousLastReplayedAt;
     }
 
-    /// <summary>
-    /// Marks the dead letter message as processed (manually handled).
-    /// </summary>
     public void MarkAsProcessed()
     {
         IsProcessed = true;

@@ -18,7 +18,6 @@ public sealed class OutboundWebhookOptions
     /// </summary>
     public IReadOnlyList<string> AllowedHttpHosts { get; set; } = Array.Empty<string>();
 
-    /// <summary>Maximum outbound response body size (default 1 MiB).</summary>
     public int MaxResponseBytes { get; set; } = DefaultMaxResponseBytes;
 
     /// <summary>Per-request total timeout for outbound deliveries.</summary>

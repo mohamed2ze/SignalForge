@@ -17,7 +17,6 @@ public sealed record ExecutionQueryFilter(
     int Page,
     int PageSize);
 
-/// <summary>One execution row for the observability list (joins workflow + version names).</summary>
 public sealed record ExecutionSummary(
     Guid Id,
     Guid WorkflowId,
@@ -30,7 +29,6 @@ public sealed record ExecutionSummary(
     int RetryCount,
     string? ErrorMessage);
 
-/// <summary>Server-side paged result (page is 1-based).</summary>
 public sealed record PagedExecutionsResult(
     IReadOnlyList<ExecutionSummary> Items,
     int Page,
@@ -47,7 +45,6 @@ public sealed record StatusCount(string Status, int Count);
 
 public sealed record CauseCount(string Cause, int Count);
 
-/// <summary>Latency of completed step executions, grouped per step type (milliseconds).</summary>
 public sealed record StepLatencyAggregate(
     string StepType,
     int Count,
@@ -55,7 +52,6 @@ public sealed record StepLatencyAggregate(
     int MinMs,
     int MaxMs);
 
-/// <summary>Failure + retry summary for the window.</summary>
 public sealed record FailureSummary(
     int FailedExecutionCount,
     IReadOnlyList<CauseCount> ExecutionFailureCauses,
@@ -79,13 +75,11 @@ public sealed record ExecutionAggregates(
 /// </summary>
 public interface IExecutionObservabilityService
 {
-    /// <summary>Paged, filtered execution list for a tenant.</summary>
     Task<PagedExecutionsResult> GetExecutionsAsync(
         Guid tenantId,
         ExecutionQueryFilter filter,
         CancellationToken cancellationToken = default);
 
-    /// <summary>Server-side status counts, step latency by step type, and failure/retry summary.</summary>
     Task<ExecutionAggregates> GetAggregatesAsync(
         Guid tenantId,
         AggregateQueryFilter filter,

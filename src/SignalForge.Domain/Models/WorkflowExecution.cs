@@ -1,9 +1,5 @@
 namespace SignalForge.Domain.Models;
 
-/// <summary>
-/// Represents an execution of a workflow version triggered by an event.
-/// Tracks the execution state and progress through steps.
-/// </summary>
 public class WorkflowExecution
 {
     public Guid Id { get; private set; }
@@ -61,14 +57,6 @@ public class WorkflowExecution
         UpdatedAt = DateTime.UtcNow;
     }
 
-    /// <summary>
-    /// Creates a new workflow execution.
-    /// </summary>
-    /// <param name="workflowId">The workflow ID</param>
-    /// <param name="workflowVersionId">The workflow version ID</param>
-    /// <param name="eventId">The event ID that triggered this execution</param>
-    /// <param name="tenantId">The tenant ID</param>
-    /// <returns>A new WorkflowExecution instance</returns>
     public static WorkflowExecution Create(
         Guid workflowId,
         Guid workflowVersionId,
@@ -83,9 +71,6 @@ public class WorkflowExecution
             tenantId);
     }
 
-    /// <summary>
-    /// Starts the workflow execution.
-    /// </summary>
     public void Start()
     {
         if (Status != WorkflowExecutionStatus.Pending)
@@ -95,9 +80,6 @@ public class WorkflowExecution
         UpdatedAt = DateTime.UtcNow;
     }
 
-    /// <summary>
-    /// Marks the execution as succeeded.
-    /// </summary>
     public void Succeed()
     {
         if (Status != WorkflowExecutionStatus.Running)
@@ -108,10 +90,6 @@ public class WorkflowExecution
         UpdatedAt = DateTime.UtcNow;
     }
 
-    /// <summary>
-    /// Marks the execution as failed.
-    /// </summary>
-    /// <param name="errorMessage">Optional error message</param>
     public void Fail(string? errorMessage = null)
     {
         if (Status != WorkflowExecutionStatus.Running)
@@ -123,9 +101,6 @@ public class WorkflowExecution
         UpdatedAt = DateTime.UtcNow;
     }
 
-    /// <summary>
-    /// Marks the execution as cancelled.
-    /// </summary>
     public void Cancel()
     {
         if (Status != WorkflowExecutionStatus.Running)
@@ -136,9 +111,6 @@ public class WorkflowExecution
         UpdatedAt = DateTime.UtcNow;
     }
 
-    /// <summary>
-    /// Advances to the next step.
-    /// </summary>
     public void AdvanceStep()
     {
         if (Status != WorkflowExecutionStatus.Running)
@@ -148,10 +120,6 @@ public class WorkflowExecution
         UpdatedAt = DateTime.UtcNow;
     }
 
-    /// <summary>
-    /// Routes to a specific step number (used when a conditional step branches to then/else).
-    /// </summary>
-    /// <param name="stepNumber">The absolute step number to route to</param>
     public void RouteToStep(int stepNumber)
     {
         if (Status != WorkflowExecutionStatus.Running)
@@ -164,9 +132,6 @@ public class WorkflowExecution
         UpdatedAt = DateTime.UtcNow;
     }
 
-    /// <summary>
-    /// Resets the execution to pending state (for retry).
-    /// </summary>
     public void ResetForRetry()
     {
         if (Status != WorkflowExecutionStatus.Failed && Status != WorkflowExecutionStatus.Cancelled)
@@ -179,10 +144,6 @@ public class WorkflowExecution
         UpdatedAt = DateTime.UtcNow;
     }
 
-    /// <summary>
-    /// Checks if the execution is completed (success, failure, or cancellation).
-    /// </summary>
-    /// <returns>True if execution is finished</returns>
     public bool IsCompleted()
     {
         return Status == WorkflowExecutionStatus.Succeeded ||
@@ -190,10 +151,6 @@ public class WorkflowExecution
                Status == WorkflowExecutionStatus.Cancelled;
     }
 
-    /// <summary>
-    /// Checks if the execution is currently running.
-    /// </summary>
-    /// <returns>True if execution is running</returns>
     public bool IsRunning()
     {
         return Status == WorkflowExecutionStatus.Running;
@@ -223,9 +180,6 @@ public class WorkflowExecution
     }
 }
 
-/// <summary>
-/// Static class containing workflow execution status constants.
-/// </summary>
 public static class WorkflowExecutionStatus
 {
     public const string Pending = "Pending";

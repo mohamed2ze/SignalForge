@@ -12,13 +12,8 @@ namespace SignalForge.Application.Services;
 /// </summary>
 public interface IRetryableOperation
 {
-    /// <summary>The operation key matched against the step's <c>operationType</c> (case-insensitive).</summary>
     string OperationType { get; }
 
-    /// <summary>
-    /// Executes the operation with its step-level <paramref name="parametersJson"/> and returns
-    /// the outcome.
-    /// </summary>
     Task<RetryableOperationResult> ExecuteAsync(
         string parametersJson,
         CancellationToken cancellationToken = default);

@@ -47,13 +47,6 @@ public class OutboxMessage
         ReplaySourceDeadLetterId = replaySourceDeadLetterId;
     }
 
-    /// <summary>
-    /// Creates a new outbox message.
-    /// </summary>
-    /// <param name="tenantId">The tenant ID</param>
-    /// <param name="type">The message type</param>
-    /// <param name="payload">The JSON payload</param>
-    /// <returns>A new OutboxMessage instance</returns>
     public static OutboxMessage Create(Guid tenantId, string type, string payload)
     {
         return new OutboxMessage(
@@ -91,19 +84,12 @@ public class OutboxMessage
             sourceDeadLetterId);
     }
 
-    /// <summary>
-    /// Marks the message as processed successfully.
-    /// </summary>
     public void MarkAsProcessed()
     {
         IsProcessed = true;
         ProcessedAt = DateTime.UtcNow;
     }
 
-    /// <summary>
-    /// Marks the message as failed.
-    /// </summary>
-    /// <param name="errorMessage">The error message</param>
     public void MarkAsFailed(string errorMessage)
     {
         if (string.IsNullOrWhiteSpace(errorMessage))
@@ -131,27 +117,16 @@ public class OutboxMessage
         NextRetryAt = nextRetryAtUtc;
     }
 
-    /// <summary>
-    /// Increments the attempt count.
-    /// </summary>
     public void IncrementAttempt()
     {
         AttemptCount++;
     }
 
-    /// <summary>
-    /// Checks if the message has been processed.
-    /// </summary>
-    /// <returns>True if processed, false otherwise</returns>
     public bool IsProcessedSuccessfully()
     {
         return IsProcessed && ProcessedAt.HasValue;
     }
 
-    /// <summary>
-    /// Checks if the message has failed.
-    /// </summary>
-    /// <returns>True if failed, false otherwise</returns>
     public bool HasFailed()
     {
         return FailedAt.HasValue;

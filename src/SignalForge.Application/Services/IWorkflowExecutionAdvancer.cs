@@ -11,12 +11,5 @@ namespace SignalForge.Application.Services;
 /// </summary>
 public interface IWorkflowExecutionAdvancer
 {
-    /// <summary>
-    /// Advances the workflow execution to its next step.
-    /// </summary>
-    /// <param name="executionId">The workflow execution ID</param>
-    /// <param name="cancellationToken">Cancellation token</param>
-    /// <returns>True if the execution made progress, false if it is not found, already completed,
-    /// or waiting on an in-flight/retry-window step.</returns>
     Task<bool> AdvanceWorkflowExecutionAsync(Guid executionId, CancellationToken cancellationToken = default);
 }

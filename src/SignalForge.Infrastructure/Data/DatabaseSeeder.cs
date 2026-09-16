@@ -18,15 +18,8 @@ public static class DatabaseSeeder
     private const int SampleKeyLength = 32;
     private const int SampleSigningSecretLength = 48;
 
-    /// <summary>
-    /// What the seeder created (null when already present), so callers can reveal plaintext
-    /// values exactly once.
-    /// </summary>
     public sealed record SeedResult(string? ApiKey, string? SigningSecret);
 
-    /// <summary>
-    /// Creates a new database seeder.
-    /// </summary>
     public static async Task<SeedResult> EnsureSeedDataAsync(
         SignalForgeDbContext dbContext,
         Guid? tenantIdOverride = null,

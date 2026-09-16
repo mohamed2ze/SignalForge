@@ -11,9 +11,6 @@ using SignalForge.Domain.Models;
 
 namespace SignalForge.Application.Services
 {
-    /// <summary>
-    /// Implementation of the workflow lifecycle service.
-    /// </summary>
     public class WorkflowService : IWorkflowService
     {
         private readonly ISignalForgeDbContext _dbContext;
@@ -25,7 +22,6 @@ namespace SignalForge.Application.Services
             _logger = logger;
         }
 
-        /// <inheritdoc />
         public async Task<List<Workflow>> GetWorkflowsAsync(Guid tenantId, CancellationToken cancellationToken = default)
         {
             return await _dbContext.Workflows
@@ -35,7 +31,6 @@ namespace SignalForge.Application.Services
                 .ToListAsync(cancellationToken);
         }
 
-        /// <inheritdoc />
         public async Task<Workflow?> GetWorkflowByIdAsync(
             Guid workflowId,
             Guid tenantId,
@@ -48,7 +43,6 @@ namespace SignalForge.Application.Services
                 .FirstOrDefaultAsync(cancellationToken);
         }
 
-        /// <inheritdoc />
         public async Task<Workflow> CreateWorkflowAsync(
             Guid tenantId,
             string name,
@@ -67,7 +61,6 @@ namespace SignalForge.Application.Services
             return workflow;
         }
 
-        /// <inheritdoc />
         public async Task<Workflow?> UpdateWorkflowAsync(
             Guid workflowId,
             Guid tenantId,
@@ -86,7 +79,6 @@ namespace SignalForge.Application.Services
             return workflow;
         }
 
-        /// <inheritdoc />
         public async Task<bool> DeleteWorkflowAsync(Guid workflowId, Guid tenantId, CancellationToken cancellationToken = default)
         {
             var workflow = await _dbContext.Workflows
@@ -102,7 +94,6 @@ namespace SignalForge.Application.Services
             return true;
         }
 
-        /// <inheritdoc />
         public Task<WorkflowVersion?> GetWorkflowVersionAsync(
             Guid versionId,
             Guid tenantId,
@@ -116,7 +107,6 @@ namespace SignalForge.Application.Services
                          v.Workflow.DeletedAt == null,
                     cancellationToken);
 
-        /// <inheritdoc />
         public async Task<WorkflowVersion?> CreateVersionAsync(
             Guid workflowId,
             Guid tenantId,
@@ -153,7 +143,6 @@ namespace SignalForge.Application.Services
             return newVersion;
         }
 
-        /// <inheritdoc />
         public async Task<WorkflowVersion?> PublishVersionAsync(
             Guid workflowId,
             Guid versionId,
@@ -186,7 +175,6 @@ namespace SignalForge.Application.Services
             return version;
         }
 
-        /// <inheritdoc />
         public async Task<WorkflowStep?> AddStepAsync(
             Guid workflowVersionId,
             Guid tenantId,
@@ -223,7 +211,6 @@ namespace SignalForge.Application.Services
             return step;
         }
 
-        /// <inheritdoc />
         public async Task<WorkflowStep?> UpdateStepAsync(
             Guid workflowVersionId,
             Guid tenantId,
@@ -253,7 +240,6 @@ namespace SignalForge.Application.Services
             return step;
         }
 
-        /// <inheritdoc />
         public async Task<WorkflowStep?> SetStepEnabledAsync(
             Guid workflowVersionId,
             Guid tenantId,
@@ -278,7 +264,6 @@ namespace SignalForge.Application.Services
             return step;
         }
 
-        /// <inheritdoc />
         public async Task<bool> RemoveStepAsync(
             Guid workflowVersionId,
             Guid tenantId,
@@ -299,7 +284,6 @@ namespace SignalForge.Application.Services
             return removed;
         }
 
-        /// <inheritdoc />
         public async Task<bool> ReorderStepsAsync(
             Guid workflowVersionId,
             Guid tenantId,

@@ -9,20 +9,11 @@ namespace SignalForge.Application.RateLimiting;
 /// </summary>
 public interface IRateLimiter
 {
-    /// <summary>
-    /// Atomically increments the counter for <paramref name="partitionKey"/> / <paramref name="windowKey"/>
-    /// and returns the new count.
-    /// </summary>
     Task<long> IncrementAsync(
         string partitionKey,
         long windowKey,
         CancellationToken cancellationToken = default);
 
-    /// <summary>
-    /// Returns the current count for <paramref name="partitionKey"/> / <paramref name="windowKey"/>
-    /// without incrementing. Used by tests and health/metadata surfaces; the request path only needs
-    /// <see cref="IncrementAsync"/>.
-    /// </summary>
     Task<long> GetCountAsync(
         string partitionKey,
         long windowKey,

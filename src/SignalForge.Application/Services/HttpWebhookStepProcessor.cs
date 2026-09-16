@@ -11,9 +11,6 @@ using SignalForge.Domain.Models;
 
 namespace SignalForge.Application.Services
 {
-    /// <summary>
-    /// Processes HTTP webhook workflow steps.
-    /// </summary>
     public class HttpWebhookStepProcessor : IStepProcessor
     {
         private readonly HttpClient _httpClient;
@@ -32,7 +29,6 @@ namespace SignalForge.Application.Services
             _options = options ?? new OutboundWebhookOptions();
         }
 
-        /// <inheritdoc />
         public async Task<bool> ProcessAsync(
             WorkflowStepExecution stepExecution,
             StepExecutionContext? context,

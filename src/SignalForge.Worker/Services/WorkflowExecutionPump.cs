@@ -32,7 +32,6 @@ public class WorkflowExecutionPump : IWorkflowExecutionPump
         _logger = logger;
     }
 
-    /// <inheritdoc />
     public async Task<TimeSpan> ProcessCycleAsync(CancellationToken cancellationToken = default)
     {
         // Fresh scope per cycle (mirrors OutboxProcessor): a short-lived DbContext avoids a

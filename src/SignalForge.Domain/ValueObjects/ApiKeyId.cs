@@ -2,9 +2,6 @@ using System;
 
 namespace SignalForge.Domain.ValueObjects;
 
-/// <summary>
-/// Strongly-typed ID for an API key.
-/// </summary>
 public readonly struct ApiKeyId : IEquatable<ApiKeyId>
 {
     private readonly Guid _value;

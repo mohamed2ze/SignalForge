@@ -8,9 +8,6 @@ using SignalForge.Domain.Models;
 
 namespace SignalForge.Application.Services
 {
-    /// <summary>
-    /// Processes Delay workflow steps.
-    /// </summary>
     public class DelayStepProcessor : IStepProcessor
     {
         private readonly ILogger<DelayStepProcessor> _logger;
@@ -22,7 +19,6 @@ namespace SignalForge.Application.Services
             _logger = logger;
         }
 
-        /// <inheritdoc />
         public async Task<bool> ProcessAsync(
             WorkflowStepExecution stepExecution,
             StepExecutionContext? context,

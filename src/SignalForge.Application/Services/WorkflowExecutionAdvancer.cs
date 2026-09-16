@@ -12,7 +12,6 @@ using SignalForge.Domain.Models;
 
 namespace SignalForge.Application.Services;
 
-/// <inheritdoc cref="IWorkflowExecutionAdvancer"/>
 public class WorkflowExecutionAdvancer : IWorkflowExecutionAdvancer
 {
     private readonly ISignalForgeDbContext _dbContext;
@@ -32,7 +31,6 @@ public class WorkflowExecutionAdvancer : IWorkflowExecutionAdvancer
         _logger = logger;
     }
 
-    /// <inheritdoc />
     public async Task<bool> AdvanceWorkflowExecutionAsync(Guid executionId, CancellationToken cancellationToken = default)
     {
         // Get the workflow execution

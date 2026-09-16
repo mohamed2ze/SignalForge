@@ -32,10 +32,6 @@ public class ExecutionObservabilityService : IExecutionObservabilityService
     private readonly ISignalForgeDbContext _dbContext;
     private readonly int _maxAggregateStepTuples;
 
-    /// <summary>
-    /// Creates the service. <paramref name="maxAggregateStepTuples"/> is injectable to keep the
-    /// sampling contract unit-testable with a small budget; production uses the 50k default.
-    /// </summary>
     public ExecutionObservabilityService(
         ISignalForgeDbContext dbContext,
         int maxAggregateStepTuples = MaxAggregateStepTuples)
@@ -44,7 +40,6 @@ public class ExecutionObservabilityService : IExecutionObservabilityService
         _maxAggregateStepTuples = maxAggregateStepTuples;
     }
 
-    /// <inheritdoc />
     public async Task<PagedExecutionsResult> GetExecutionsAsync(
         Guid tenantId,
         ExecutionQueryFilter filter,
@@ -85,7 +80,6 @@ public class ExecutionObservabilityService : IExecutionObservabilityService
         return new PagedExecutionsResult(items, filter.Page, filter.PageSize, totalCount);
     }
 
-    /// <inheritdoc />
     public async Task<ExecutionAggregates> GetAggregatesAsync(
         Guid tenantId,
         AggregateQueryFilter filter,

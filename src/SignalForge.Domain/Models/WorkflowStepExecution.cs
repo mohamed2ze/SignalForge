@@ -1,9 +1,5 @@
 namespace SignalForge.Domain.Models;
 
-/// <summary>
-/// Represents the execution of a single step within a workflow execution.
-/// Tracks the step's state, attempts, and results.
-/// </summary>
 public class WorkflowStepExecution
 {
     public Guid Id { get; private set; }
@@ -51,14 +47,6 @@ public class WorkflowStepExecution
         UpdatedAt = DateTime.UtcNow;
     }
 
-    /// <summary>
-    /// Creates a new workflow step execution.
-    /// </summary>
-    /// <param name="workflowExecutionId">The workflow execution ID</param>
-    /// <param name="workflowStepId">The workflow step ID</param>
-    /// <param name="stepNumber">The step number</param>
-    /// <param name="maxAttempts">Maximum attempts allowed</param>
-    /// <returns>A new WorkflowStepExecution instance</returns>
     public static WorkflowStepExecution Create(
         Guid workflowExecutionId,
         Guid workflowStepId,
@@ -73,9 +61,6 @@ public class WorkflowStepExecution
             maxAttempts);
     }
 
-    /// <summary>
-    /// Starts executing the step.
-    /// </summary>
     public void Start()
     {
         if (Status != WorkflowStepExecutionStatus.Pending)
@@ -87,11 +72,6 @@ public class WorkflowStepExecution
         UpdatedAt = DateTime.UtcNow;
     }
 
-    /// <summary>
-    /// Marks the step execution as succeeded.
-    /// </summary>
-    /// <param name="output">Optional output/result from the step</param>
-    /// <param name="routeToStepNumber">Optional target step number to route to next; null means sequential next step</param>
     public void Succeed(string? output = null, int? routeToStepNumber = null)
     {
         if (Status != WorkflowStepExecutionStatus.Running)
@@ -104,10 +84,6 @@ public class WorkflowStepExecution
         UpdatedAt = DateTime.UtcNow;
     }
 
-    /// <summary>
-    /// Marks the step execution as failed.
-    /// </summary>
-    /// <param name="errorMessage">Error message</param>
     public void Fail(string errorMessage)
     {
         if (string.IsNullOrWhiteSpace(errorMessage))
@@ -122,9 +98,6 @@ public class WorkflowStepExecution
         UpdatedAt = DateTime.UtcNow;
     }
 
-    /// <summary>
-    /// Marks the step execution as cancelled.
-    /// </summary>
     public void Cancel()
     {
         if (Status != WorkflowStepExecutionStatus.Running)
@@ -135,10 +108,6 @@ public class WorkflowStepExecution
         UpdatedAt = DateTime.UtcNow;
     }
 
-    /// <summary>
-    /// Marks the step execution as retrying (will be retried later).
-    /// </summary>
-    /// <param name="nextRetryAt">When to retry next</param>
     public void Retry(DateTime nextRetryAt)
     {
         if (Status != WorkflowStepExecutionStatus.Failed)
@@ -188,19 +157,11 @@ public class WorkflowStepExecution
         UpdatedAt = DateTime.UtcNow;
     }
 
-    /// <summary>
-    /// Checks if the step execution can be retried.
-    /// </summary>
-    /// <returns>True if can be retried, false otherwise</returns>
     public bool CanRetry()
     {
         return Status == WorkflowStepExecutionStatus.Failed && AttemptNumber < MaxAttempts;
     }
 
-    /// <summary>
-    /// Checks if the step execution is completed (success, failure, or cancellation).
-    /// </summary>
-    /// <returns>True if step execution is finished</returns>
     public bool IsCompleted()
     {
         return Status == WorkflowStepExecutionStatus.Succeeded ||
@@ -208,19 +169,11 @@ public class WorkflowStepExecution
                Status == WorkflowStepExecutionStatus.Cancelled;
     }
 
-    /// <summary>
-    /// Checks if the step execution is currently running.
-    /// </summary>
-    /// <returns>True if step execution is running</returns>
     public bool IsRunning()
     {
         return Status == WorkflowStepExecutionStatus.Running;
     }
 
-    /// <summary>
-    /// Checks if it's time to retry the step execution.
-    /// </summary>
-    /// <returns>True if it's time to retry</returns>
     public bool IsTimeToRetry()
     {
         return Status == WorkflowStepExecutionStatus.Retrying &&
@@ -229,9 +182,6 @@ public class WorkflowStepExecution
     }
 }
 
-/// <summary>
-/// Static class containing workflow step execution status constants.
-/// </summary>
 public static class WorkflowStepExecutionStatus
 {
     public const string Pending = "Pending";

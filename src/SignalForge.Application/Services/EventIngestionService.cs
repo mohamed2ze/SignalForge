@@ -8,9 +8,6 @@ using SignalForge.Domain.ValueObjects;
 
 namespace SignalForge.Application.Services;
 
-/// <summary>
-/// Implementation of event ingestion service with idempotency support.
-/// </summary>
 public class EventIngestionService : IEventIngestionService
 {
     private readonly ISignalForgeDbContext _dbContext;
@@ -27,7 +24,6 @@ public class EventIngestionService : IEventIngestionService
         _uniqueViolationDetector = uniqueViolationDetector;
     }
 
-    /// <inheritdoc />
     public async Task<IngestEventResult> IngestEventAsync(
         Guid tenantId,
         string externalEventId,
@@ -96,13 +92,11 @@ public class EventIngestionService : IEventIngestionService
         };
     }
 
-    /// <inheritdoc />
     public async Task PublishAsync(Guid tenantId, string eventType, string payload, CancellationToken cancellationToken = default)
     {
         await _outboxPublisher.PublishAsync(tenantId, eventType, payload, cancellationToken);
     }
 
-    /// <inheritdoc />
     public async Task<Event?> GetEventByIdAsync(Guid eventId, Guid tenantId)
     {
         return await _dbContext.Events

@@ -53,7 +53,6 @@ public static class ApiKeyHasher
             : VerifyLegacySha256(plainTextKey, storedHash);
     }
 
-    /// <summary>True when the stored hash uses the current versioned format.</summary>
     public static bool IsVersionedHash(string storedHash)
         => storedHash.StartsWith(HashVersionPrefix, StringComparison.Ordinal);
 

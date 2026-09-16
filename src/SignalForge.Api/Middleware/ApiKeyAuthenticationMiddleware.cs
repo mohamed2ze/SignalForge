@@ -7,9 +7,6 @@ using SignalForge.Domain.ValueObjects;
 
 namespace SignalForge.Api.Middleware;
 
-/// <summary>
-/// Authentication handler for API key authentication.
-/// </summary>
 public class ApiKeyAuthenticationHandler : AuthenticationHandler<ApiKeyAuthenticationOptions>
 {
     private readonly IApiKeyValidationService _apiKeyValidationService;
@@ -79,26 +76,13 @@ public class ApiKeyAuthenticationHandler : AuthenticationHandler<ApiKeyAuthentic
     }
 }
 
-/// <summary>
-/// Options for API key authentication.
-/// </summary>
 public class ApiKeyAuthenticationOptions : AuthenticationSchemeOptions
 {
-    /// <summary>
-    /// Gets or sets the header name where the API key is expected.
-    /// Default is "X-API-Key".
-    /// </summary>
     public string HeaderName { get; set; } = "X-API-Key";
 }
 
-/// <summary>
-/// Extension methods for adding API key authentication.
-/// </summary>
 public static class ApiKeyAuthenticationExtensions
 {
-    /// <summary>
-    /// Adds API key authentication to the authentication builder.
-    /// </summary>
     public static AuthenticationBuilder AddApiKeyAuthentication(
         this AuthenticationBuilder builder,
         Action<ApiKeyAuthenticationOptions>? configureOptions = null)
@@ -110,9 +94,6 @@ public static class ApiKeyAuthenticationExtensions
     }
 }
 
-/// <summary>
-/// Constants for API key authentication scheme.
-/// </summary>
 public static class ApiKeyAuthenticationDefaults
 {
     public const string AuthenticationScheme = "ApiKey";

@@ -15,7 +15,6 @@ namespace SignalForge.Infrastructure.Broker
     {
         private readonly ConcurrentQueue<BrokerMessage> _messages = new();
 
-        /// <inheritdoc />
         public Task<bool> PublishAsync(string type, string payload, CancellationToken cancellationToken = default)
         {
             if (string.IsNullOrWhiteSpace(type))
@@ -30,10 +29,8 @@ namespace SignalForge.Infrastructure.Broker
             return Task.FromResult(true);
         }
 
-        /// <inheritdoc />
         public IReadOnlyList<BrokerMessage> GetAll() => _messages.ToArray();
 
-        /// <inheritdoc />
         public Task<IReadOnlyList<BrokerMessage>> GetAllAsync(CancellationToken cancellationToken = default)
             => Task.FromResult(GetAll());
     }

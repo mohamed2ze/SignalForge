@@ -8,10 +8,6 @@ using SignalForge.Domain.Models;
 
 namespace SignalForge.Application.Services
 {
-    /// <summary>
-    /// Processes Log/Audit workflow steps.
-    /// Logs information for auditing purposes.
-    /// </summary>
     public class LogAuditStepProcessor : IStepProcessor
     {
         private readonly ILogger<LogAuditStepProcessor> _logger;
@@ -23,7 +19,6 @@ namespace SignalForge.Application.Services
             _logger = logger;
         }
 
-        /// <inheritdoc />
         public async Task<bool> ProcessAsync(
             WorkflowStepExecution stepExecution,
             StepExecutionContext? context,

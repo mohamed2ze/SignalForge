@@ -26,7 +26,6 @@ public class MailKitEmailTransport : IOutboundEmailTransport
         _logger = logger;
     }
 
-    /// <inheritdoc />
     public async Task<string> SendAsync(
         string to,
         string? subject,

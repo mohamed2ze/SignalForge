@@ -2,9 +2,6 @@ using System.Collections.Generic;
 
 namespace SignalForge.Application.Notifications;
 
-/// <summary>
-/// Resolves notification providers by their configured provider type key.
-/// </summary>
 public interface INotificationProviderRegistry
 {
     /// <summary>
@@ -13,6 +10,5 @@ public interface INotificationProviderRegistry
     /// </summary>
     INotificationProvider? Get(string providerType);
 
-    /// <summary>The registered provider type keys, sorted.</summary>
     IReadOnlyCollection<string> AvailableProviders { get; }
 }

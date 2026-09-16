@@ -13,9 +13,6 @@ public sealed record AddStepCommand(
     string? Description = null,
     bool IsEnabled = true);
 
-/// <summary>
-/// Partial update to an existing step. Null fields are left untouched.
-/// </summary>
 public sealed record UpdateStepCommand(
     string? Name = null,
     string? Description = null,

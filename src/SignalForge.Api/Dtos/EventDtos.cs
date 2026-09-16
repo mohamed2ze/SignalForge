@@ -2,9 +2,6 @@ using SignalForge.Domain.Models;
 
 namespace SignalForge.Api.Dtos;
 
-/// <summary>
-/// Request model for ingesting an event.
-/// </summary>
 public class IngestEventRequest
 {
     /// <summary>
@@ -12,25 +9,13 @@ public class IngestEventRequest
     /// </summary>
     public string ExternalEventId { get; set; } = default!;
 
-    /// <summary>
-    /// The type of event (e.g., "order.created", "payment.received").
-    /// </summary>
     public string EventType { get; set; } = default!;
 
-    /// <summary>
-    /// When the event actually occurred (defaults to now if not provided).
-    /// </summary>
     public DateTime? OccurredAt { get; set; }
 
-    /// <summary>
-    /// The event payload as a JSON string.
-    /// </summary>
     public string Payload { get; set; } = default!;
 }
 
-/// <summary>
-/// Response model for event data.
-/// </summary>
 public class EventDto
 {
     public Guid Id { get; set; }

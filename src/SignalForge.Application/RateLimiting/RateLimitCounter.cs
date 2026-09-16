@@ -20,6 +20,5 @@ public sealed class RateLimitCounter
     /// <summary>Fixed-window bucket computed by <see cref="RateLimitWindow.GetWindowKey"/>.</summary>
     public long WindowKey { get; set; }
 
-    /// <summary>Current request count in this window.</summary>
     public long Count { get; set; }
 }

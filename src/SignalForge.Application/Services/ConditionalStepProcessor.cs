@@ -9,10 +9,6 @@ using SignalForge.Domain.Models;
 
 namespace SignalForge.Application.Services
 {
-    /// <summary>
-    /// Processes Conditional/rule workflow steps.
-    /// Evaluates a condition and determines the next step based on the result.
-    /// </summary>
     public class ConditionalStepProcessor : IStepProcessor
     {
         private readonly ILogger<ConditionalStepProcessor> _logger;
@@ -24,7 +20,6 @@ namespace SignalForge.Application.Services
             _logger = logger;
         }
 
-        /// <inheritdoc />
         public async Task<bool> ProcessAsync(
             WorkflowStepExecution stepExecution,
             StepExecutionContext? context,

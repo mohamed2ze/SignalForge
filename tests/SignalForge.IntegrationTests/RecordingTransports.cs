@@ -23,10 +23,6 @@ public sealed class RecordingEmailTransport : IOutboundEmailTransport
     }
 }
 
-/// <summary>
-/// In-memory SMS transport for integration tests: records the message and returns a
-/// deterministic delivery id.
-/// </summary>
 public sealed class RecordingSmsTransport : IOutboundSmsTransport
 {
     public string? LastTo { get; private set; }

@@ -121,7 +121,6 @@ public abstract class ApiTestBase : IDisposable
             .Invoke(execution, new object[] { step });
     }
 
-    /// <summary>A running execution over a published single-Delay-step version.</summary>
     protected static async Task<(Guid WorkflowId, Guid VersionId, Guid EventId, Guid ExecutionId)> SeedRunningExecutionAsync(
         SignalForgeDbContext ctx, Guid tenantId, string workflowName)
     {
@@ -143,7 +142,6 @@ public abstract class ApiTestBase : IDisposable
         return (workflow.Id, version.Id, evt.Id, execution.Id);
     }
 
-    /// <summary>A workflow whose single HttpWebhook step fails, leaving a dead letter.</summary>
     protected static async Task<(Guid WorkflowId, Guid DeadLetterId)> SeedStepFailureDeadLetterAsync(
         SignalForgeDbContext ctx, Guid tenantId, string workflowName, DateTime? createdAt = null)
     {
@@ -177,8 +175,6 @@ public abstract class ApiTestBase : IDisposable
         return (workflow.Id, deadLetter.Id);
     }
 
-    /// <summary>A published single-step workflow with one FAILED step execution (attempts remaining),
-    /// ready for the HTTP retry endpoint.</summary>
     protected static async Task<(Guid WorkflowId, Guid VersionId, Guid EventId, Guid ExecutionId, Guid StepExecutionId)>
         SeedFailedStepExecutionAsync(SignalForgeDbContext ctx, Guid tenantId, string workflowName)
     {

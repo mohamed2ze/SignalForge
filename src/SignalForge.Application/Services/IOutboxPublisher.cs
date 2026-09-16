@@ -4,9 +4,6 @@ using SignalForge.Domain.Models;
 
 namespace SignalForge.Application.Services
 {
-    /// <summary>
-    /// Service for publishing messages to the outbox for reliable delivery.
-    /// </summary>
     public interface IOutboxPublisher
     {
         /// <summary>

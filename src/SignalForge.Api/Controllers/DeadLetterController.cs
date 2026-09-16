@@ -6,9 +6,6 @@ using static SignalForge.Api.Controllers.ApiControllerExtensions;
 
 namespace SignalForge.Api.Controllers;
 
-/// <summary>
-/// Controller for managing dead letter messages.
-/// </summary>
 [ApiController]
 [Route("api/dead-letters")]
 [Produces("application/json")]
@@ -155,11 +152,6 @@ public class DeadLetterController : ControllerBase
         }
     }
 
-    /// <summary>
-    /// Gets a dead letter message by its ID.
-    /// </summary>
-    /// <param name="id">The dead letter message ID</param>
-    /// <returns>The dead letter message if found</returns>
     [HttpGet("{id:guid}")]
     [ProducesResponseType(typeof(DeadLetterDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
@@ -191,11 +183,6 @@ public class DeadLetterController : ControllerBase
         }
     }
 
-    /// <summary>
-    /// Marks a dead letter message as processed (manually handled).
-    /// </summary>
-    /// <param name="id">The dead letter message ID</param>
-    /// <returns>True if the dead letter was found and marked as processed, false otherwise</returns>
     [HttpPost("{id:guid}/process")]
     [ProducesResponseType(typeof(bool), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
@@ -228,10 +215,6 @@ public class DeadLetterController : ControllerBase
         }
     }
 
-    /// <summary>
-    /// Gets counts of dead letter messages for the current tenant.
-    /// </summary>
-    /// <returns>Dead letter counts</returns>
     [HttpGet("counts")]
     [ProducesResponseType(typeof(DeadLetterCountsDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status401Unauthorized)]

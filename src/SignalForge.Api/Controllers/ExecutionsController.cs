@@ -37,15 +37,6 @@ public sealed class ExecutionsController : ControllerBase
         _logger = logger;
     }
 
-    /// <summary>
-    /// Paged, filtered execution history for the caller's tenant.
-    /// </summary>
-    /// <param name="workflowId">Optional exact workflow filter.</param>
-    /// <param name="status">Optional execution status filter.</param>
-    /// <param name="from">Optional window start (ISO 8601, UTC).</param>
-    /// <param name="to">Optional window end (ISO 8601, UTC).</param>
-    /// <param name="page">1-based page number (default 1).</param>
-    /// <param name="pageSize">Page size 1..100 (default 20).</param>
     [HttpGet]
     [ProducesResponseType(typeof(PagedExecutionsResult), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status401Unauthorized)]

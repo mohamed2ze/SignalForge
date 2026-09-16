@@ -10,10 +10,8 @@ namespace SignalForge.Application.Services;
 /// </summary>
 public class EchoRetryableOperation : IRetryableOperation
 {
-    /// <inheritdoc />
     public string OperationType => "echo";
 
-    /// <inheritdoc />
     public Task<RetryableOperationResult> ExecuteAsync(
         string parametersJson,
         CancellationToken cancellationToken = default)

@@ -45,9 +45,6 @@ public sealed class ApiTestFactory : WebApplicationFactory<Program>
         });
     }
 
-    /// <summary>
-    /// A pre-authenticated Http client carrying the given API key header.
-    /// </summary>
     public HttpClient CreateClient(string apiKey)
     {
         var client = CreateClient();
@@ -56,8 +53,5 @@ public sealed class ApiTestFactory : WebApplicationFactory<Program>
         return client;
     }
 
-    /// <summary>
-    /// A pre-authenticated Http client carrying the seeded default-tenant API key.
-    /// </summary>
     public HttpClient CreateClientForSeededTenant() => CreateClient(ApiKey);
 }

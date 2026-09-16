@@ -21,9 +21,6 @@ public class TenantWebhookSigningSetting
         UpdatedAt = DateTime.UtcNow;
     }
 
-    /// <summary>
-    /// Creates a signing setting for a tenant.
-    /// </summary>
     public static TenantWebhookSigningSetting Create(Guid tenantId, string signingSecret)
     {
         if (string.IsNullOrWhiteSpace(signingSecret))

@@ -47,15 +47,6 @@ public class Event
         IsProcessed = false;
     }
 
-    /// <summary>
-    /// Creates a new event.
-    /// </summary>
-    /// <param name="tenantId">The tenant ID</param>
-    /// <param name="externalEventId">The external event ID (idempotency key)</param>
-    /// <param name="eventType">The type of event</param>
-    /// <param name="occurredAt">When the event occurred</param>
-    /// <param name="payload">The event payload as JSON</param>
-    /// <returns>A new Event instance</returns>
     public static Event Create(
         Guid tenantId,
         string externalEventId,
@@ -85,9 +76,6 @@ public class Event
         );
     }
 
-    /// <summary>
-    /// Marks the event as processed.
-    /// </summary>
     public void MarkAsProcessed()
     {
         IsProcessed = true;

@@ -2,10 +2,6 @@ using System;
 
 namespace SignalForge.Domain.ValueObjects;
 
-/// <summary>
-/// Strongly-typed ID for Tenant entity.
-/// Provides type safety and prevents mixing up different ID types.
-/// </summary>
 public readonly struct TenantId : IEquatable<TenantId>
 {
     public Guid Value { get; }

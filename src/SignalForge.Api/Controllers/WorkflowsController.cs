@@ -7,9 +7,6 @@ using static SignalForge.Api.Controllers.ApiControllerExtensions;
 
 namespace SignalForge.Api.Controllers;
 
-/// <summary>
-/// Controller for managing workflows, workflow versions, and workflow executions.
-/// </summary>
 [ApiController]
 [Route("api/workflows")]
 [Produces("application/json")]
@@ -29,10 +26,6 @@ public class WorkflowsController : ControllerBase
         _logger = logger;
     }
 
-    /// <summary>
-    /// Lists all workflows for the caller's tenant.
-    /// </summary>
-    /// <returns>The list of workflows</returns>
     [HttpGet]
     [ProducesResponseType(typeof(List<WorkflowSummaryDto>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status401Unauthorized)]
@@ -45,11 +38,6 @@ public class WorkflowsController : ControllerBase
         return Ok(workflows.Select(WorkflowSummaryDto.FromDomain).ToList());
     }
 
-    /// <summary>
-    /// Creates a new workflow (with its initial draft version).
-    /// </summary>
-    /// <param name="request">The workflow creation request</param>
-    /// <returns>The created workflow</returns>
     [HttpPost]
     [ProducesResponseType(typeof(WorkflowDto), StatusCodes.Status201Created)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
@@ -78,11 +66,6 @@ public class WorkflowsController : ControllerBase
             WorkflowDto.FromDomain(workflow));
     }
 
-    /// <summary>
-    /// Gets a workflow (with its versions and steps).
-    /// </summary>
-    /// <param name="workflowId">The workflow ID</param>
-    /// <returns>The workflow if found</returns>
     [HttpGet("{workflowId:guid}")]
     [ProducesResponseType(typeof(WorkflowDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status401Unauthorized)]
@@ -106,12 +89,6 @@ public class WorkflowsController : ControllerBase
         return Ok(WorkflowDto.FromDomain(workflow));
     }
 
-    /// <summary>
-    /// Updates a workflow's name and description.
-    /// </summary>
-    /// <param name="workflowId">The workflow ID</param>
-    /// <param name="request">The workflow update request</param>
-    /// <returns>The updated workflow</returns>
     [HttpPut("{workflowId:guid}")]
     [ProducesResponseType(typeof(WorkflowDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
@@ -148,11 +125,6 @@ public class WorkflowsController : ControllerBase
         return Ok(WorkflowDto.FromDomain(workflow));
     }
 
-    /// <summary>
-    /// Soft-deletes a workflow.
-    /// </summary>
-    /// <param name="workflowId">The workflow ID</param>
-    /// <returns>No content on success</returns>
     [HttpDelete("{workflowId:guid}")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status401Unauthorized)]
@@ -176,12 +148,6 @@ public class WorkflowsController : ControllerBase
         return NoContent();
     }
 
-    /// <summary>
-    /// Creates a new draft version of a workflow (a copy of the latest version, version number incremented).
-    /// </summary>
-    /// <param name="workflowId">The workflow ID</param>
-    /// <param name="request">The version creation request</param>
-    /// <returns>The created draft version</returns>
     [HttpPost("{workflowId:guid}/versions")]
     [ProducesResponseType(typeof(WorkflowVersionDto), StatusCodes.Status201Created)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status401Unauthorized)]
@@ -210,12 +176,6 @@ public class WorkflowsController : ControllerBase
             WorkflowVersionDto.FromDomain(version));
     }
 
-    /// <summary>
-    /// Publishes a draft workflow version, making the workflow enabled.
-    /// </summary>
-    /// <param name="workflowId">The workflow ID</param>
-    /// <param name="versionId">The version ID to publish</param>
-    /// <returns>The published version</returns>
     [HttpPost("{workflowId:guid}/versions/{versionId:guid}/publish")]
     [ProducesResponseType(typeof(WorkflowVersionDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
@@ -254,11 +214,6 @@ public class WorkflowsController : ControllerBase
         }
     }
 
-    /// <summary>
-    /// Starts a workflow execution.
-    /// </summary>
-    /// <param name="request">The workflow execution request</param>
-    /// <returns>The created workflow execution</returns>
     [HttpPost("{workflowId:guid}/execute")]
     [ProducesResponseType(typeof(WorkflowExecutionDto), StatusCodes.Status201Created)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
@@ -327,12 +282,6 @@ public class WorkflowsController : ControllerBase
         }
     }
 
-    /// <summary>
-    /// Gets a workflow execution by its ID.
-    /// </summary>
-    /// <param name="workflowId">The parent workflow ID</param>
-    /// <param name="executionId">The workflow execution ID</param>
-    /// <returns>The workflow execution if found</returns>
     [HttpGet("{workflowId:guid}/executions/{executionId:guid}")]
     [ProducesResponseType(typeof(WorkflowExecutionDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status401Unauthorized)]
@@ -366,11 +315,6 @@ public class WorkflowsController : ControllerBase
         }
     }
 
-    /// <summary>
-    /// Gets the step executions for a workflow execution.
-    /// </summary>
-    /// <param name="executionId">The workflow execution ID</param>
-    /// <returns>The step executions for the workflow execution</returns>
     [HttpGet("{executionId:guid}/steps")]
     [ProducesResponseType(typeof(List<WorkflowStepExecutionDto>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status401Unauthorized)]
@@ -518,9 +462,6 @@ public class WorkflowsController : ControllerBase
                 new UpdateStepCommand(request.Name, request.Description, request.Configuration, request.IsEnabled)),
             created: false);
 
-    /// <summary>
-    /// Enables a step on a draft version.
-    /// </summary>
     [HttpPost("{workflowId:guid}/versions/{versionId:guid}/steps/{stepId:guid}/enable")]
     [ProducesResponseType(typeof(WorkflowStepDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status401Unauthorized)]
@@ -530,9 +471,6 @@ public class WorkflowsController : ControllerBase
             tenant => _workflowService.SetStepEnabledAsync(versionId, tenant, stepId, enabled: true),
             created: false);
 
-    /// <summary>
-    /// Disables a step on a draft version. Disabled steps are skipped by the execution engine.
-    /// </summary>
     [HttpPost("{workflowId:guid}/versions/{versionId:guid}/steps/{stepId:guid}/disable")]
     [ProducesResponseType(typeof(WorkflowStepDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status401Unauthorized)]
@@ -542,10 +480,6 @@ public class WorkflowsController : ControllerBase
             tenant => _workflowService.SetStepEnabledAsync(versionId, tenant, stepId, enabled: false),
             created: false);
 
-    /// <summary>
-    /// Removes a step from a draft version and renumbers the remaining steps contiguously.
-    /// </summary>
-    /// <returns>No content on success</returns>
     [HttpDelete("{workflowId:guid}/versions/{versionId:guid}/steps/{stepId:guid}")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status401Unauthorized)]
@@ -574,10 +508,6 @@ public class WorkflowsController : ControllerBase
         }
     }
 
-    /// <summary>
-    /// Reorders the steps of a draft version: the request must list every step id exactly once.
-    /// </summary>
-    /// <returns>The reordered version (with its steps)</returns>
     [HttpPut("{workflowId:guid}/versions/{versionId:guid}/steps/reorder")]
     [ProducesResponseType(typeof(WorkflowVersionDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]

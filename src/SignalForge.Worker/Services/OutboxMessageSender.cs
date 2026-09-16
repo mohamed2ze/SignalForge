@@ -5,10 +5,6 @@ using SignalForge.Application.Broker;
 
 namespace SignalForge.Worker.Services
 {
-    /// <summary>
-    /// Implementation of the outbox message sender that publishes through an
-    /// <see cref="IMessageBroker"/> (in-memory for local dev; real transports swap in later).
-    /// </summary>
     public class OutboxMessageSender : IOutboxMessageSender
     {
         private readonly IMessageBroker _broker;
@@ -20,7 +16,6 @@ namespace SignalForge.Worker.Services
             _logger = logger;
         }
 
-        /// <inheritdoc />
         public async Task SendAsync(string type, string payload, CancellationToken cancellationToken = default)
         {
             bool published = await _broker.PublishAsync(type, payload, cancellationToken);

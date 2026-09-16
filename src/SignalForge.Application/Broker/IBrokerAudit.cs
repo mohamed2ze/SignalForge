@@ -6,13 +6,7 @@ namespace SignalForge.Application.Broker;
 /// </summary>
 public interface IBrokerAudit
 {
-    /// <summary>
-    /// Returns all messages currently held by the broker store, in publication order.
-    /// </summary>
     IReadOnlyList<BrokerMessage> GetAll();
 
-    /// <summary>
-    /// Async overload of <see cref="GetAll"/> for symmetric access patterns.
-    /// </summary>
     Task<IReadOnlyList<BrokerMessage>> GetAllAsync(CancellationToken cancellationToken = default);
 }

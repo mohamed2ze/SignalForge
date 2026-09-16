@@ -7,9 +7,5 @@ namespace SignalForge.Application.Data;
 /// </summary>
 public interface IUniqueViolationDetector
 {
-    /// <summary>
-    /// Returns true when <paramref name="exception"/> (or its inner chain) was caused by a
-    /// storage-level unique index/constraint violation.
-    /// </summary>
     bool IsUniqueViolation(Exception exception);
 }

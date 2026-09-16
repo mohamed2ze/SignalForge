@@ -36,7 +36,6 @@ public class HttpSmsTransport : IOutboundSmsTransport
         _logger = logger;
     }
 
-    /// <inheritdoc />
     public async Task<string> SendAsync(
         string to,
         string body,

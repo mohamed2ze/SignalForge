@@ -7,7 +7,6 @@ using SignalForge.Application.Security;
 
 namespace SignalForge.UnitTests.Notifications;
 
-/// <summary>Minimal ILogger that records formatted messages for inspection.</summary>
 internal sealed class ListLogger<T> : ILogger<T>
 {
     public List<string> Messages { get; } = [];

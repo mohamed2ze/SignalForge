@@ -30,9 +30,6 @@ public sealed class MsSqlContainerFixture : IAsyncLifetime
         .WithPassword(Password)
         .Build();
 
-    /// <summary>
-    /// Connection string for the running container (mapped host port, database "db").
-    /// </summary>
     public string ConnectionString { get; private set; } = string.Empty;
 
     public async Task InitializeAsync()

@@ -26,9 +26,6 @@ internal static class ApiControllerExtensions
         return true;
     }
 
-    /// <summary>
-    /// The canonical 401 ProblemDetails returned when the tenant cannot be resolved.
-    /// </summary>
     internal static ProblemDetails TenantProblem() => new ProblemDetails
     {
         Title = "Invalid tenant information",
@@ -36,9 +33,6 @@ internal static class ApiControllerExtensions
         Detail = "Unable to determine tenant from authentication token"
     };
 
-    /// <summary>
-    /// 500 ProblemDetails for the repeated catch blocks.
-    /// </summary>
     internal static ObjectResult InternalServerError(this ControllerBase controller, string detail)
         => controller.StatusCode(StatusCodes.Status500InternalServerError, new ProblemDetails
         {
@@ -70,9 +64,6 @@ internal static class ApiControllerExtensions
         return false;
     }
 
-    /// <summary>
-    /// Parses an optional from/to ISO-8601 window into UTC instants.
-    /// </summary>
     internal static bool TryParseWindow(
         string? from,
         string? to,

@@ -2,10 +2,6 @@ using SignalForge.Domain.Security;
 
 namespace SignalForge.Domain.Models;
 
-/// <summary>
-/// Represents an API key for tenant authentication.
-/// API keys are hashed before storage for security.
-/// </summary>
 public class ApiKey
 {
     public Guid Id { get; private set; }
@@ -37,13 +33,6 @@ public class ApiKey
         UpdatedAt = DateTime.UtcNow;
     }
 
-    /// <summary>
-    /// Creates a new API key with automatic hashing.
-    /// </summary>
-    /// <param name="tenantId">The tenant ID</param>
-    /// <param name="name">The API key name/description</param>
-    /// <param name="plainTextKey">The plain-text API key (will be hashed)</param>
-    /// <returns>A new ApiKey instance</returns>
     public static ApiKey Create(Guid tenantId, string name, string plainTextKey)
     {
         if (string.IsNullOrWhiteSpace(name))
@@ -92,10 +81,6 @@ public class ApiKey
         UpdatedAt = DateTime.UtcNow;
     }
 
-    /// <summary>
-    /// Updates the API key information.
-    /// </summary>
-    /// <param name="name">The new API key name</param>
     public void UpdateInfo(string name)
     {
         if (string.IsNullOrWhiteSpace(name))
@@ -105,27 +90,18 @@ public class ApiKey
         UpdatedAt = DateTime.UtcNow;
     }
 
-    /// <summary>
-    /// Deactivates the API key.
-    /// </summary>
     public void Deactivate()
     {
         IsActive = false;
         UpdatedAt = DateTime.UtcNow;
     }
 
-    /// <summary>
-    /// Activates the API key.
-    /// </summary>
     public void Activate()
     {
         IsActive = true;
         UpdatedAt = DateTime.UtcNow;
     }
 
-    /// <summary>
-    /// Revokes the API key permanently.
-    /// </summary>
     public void Revoke()
     {
         IsActive = false;
@@ -133,28 +109,17 @@ public class ApiKey
         UpdatedAt = DateTime.UtcNow;
     }
 
-    /// <summary>
-    /// Marks the API key as used.
-    /// </summary>
     public void MarkAsUsed()
     {
         LastUsedAt = DateTime.UtcNow;
         UpdatedAt = DateTime.UtcNow;
     }
 
-    /// <summary>
-    /// Checks if the API key is expired.
-    /// </summary>
-    /// <returns>True if expired, false otherwise</returns>
     public bool IsExpired()
     {
         return ExpiresAt.HasValue && ExpiresAt.Value < DateTime.UtcNow;
     }
 
-    /// <summary>
-    /// Checks if the API key is valid for use.
-    /// </returns>
-    /// <returns>True if active, not expired, and not revoked</returns>
     public bool IsValid()
     {
         return IsActive && !IsExpired() && RevokedAt == null;

@@ -28,12 +28,6 @@ public static class WorkflowStepConfigurationValidator
             ["RetryableOperation"] = [new RequiredField("operationType", JsonValueKind.String)]
         };
 
-    /// <summary>
-    /// Validates <paramref name="configurationJson"/> for the given <paramref name="stepType"/>.
-    /// </summary>
-    /// <param name="stepType">The step type (matched case-insensitively against <see cref="StepType"/> names)</param>
-    /// <param name="configurationJson">The raw JSON configuration</param>
-    /// <returns>An error message, or null when the configuration is valid.</returns>
     public static string? Validate(string stepType, string? configurationJson)
     {
         if (string.IsNullOrWhiteSpace(configurationJson))

@@ -10,7 +10,6 @@ using SignalForge.Domain.Models;
 
 namespace SignalForge.Application.Services;
 
-/// <inheritdoc cref="IStepExecutionRetryPolicy"/>
 public class StepExecutionRetryPolicy(
     ISignalForgeDbContext dbContext,
     IOptions<StepRetryPolicyOptions> options,
@@ -18,7 +17,6 @@ public class StepExecutionRetryPolicy(
 {
     private readonly StepRetryPolicyOptions _options = options.Value;
 
-    /// <inheritdoc />
     public async Task<StepFailureResolution> ResolveFailureAsync(
         WorkflowExecution execution,
         WorkflowStepExecution stepExecution,
@@ -49,7 +47,6 @@ public class StepExecutionRetryPolicy(
         return StepFailureResolution.DeadLettered;
     }
 
-    /// <inheritdoc />
     public async Task ScheduleRetryAsync(
         WorkflowStepExecution stepExecution,
         CancellationToken cancellationToken = default)

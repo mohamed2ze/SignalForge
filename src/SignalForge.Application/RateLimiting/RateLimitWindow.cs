@@ -8,7 +8,6 @@ namespace SignalForge.Application.RateLimiting;
 /// </summary>
 public static class RateLimitWindow
 {
-    /// <summary>Returns the fixed-window bucket key owning <paramref name="now"/>.</summary>
     public static long GetWindowKey(DateTimeOffset now, TimeSpan window)
     {
         if (window <= TimeSpan.Zero)

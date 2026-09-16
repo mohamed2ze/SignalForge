@@ -5,9 +5,6 @@ using SignalForge.Domain.Models;
 
 namespace SignalForge.Application.Services
 {
-    /// <summary>
-    /// Implementation of the outbox publisher that writes messages to the outbox table.
-    /// </summary>
     public class OutboxPublisher : IOutboxPublisher
     {
         private readonly ISignalForgeDbContext _dbContext;
@@ -17,7 +14,6 @@ namespace SignalForge.Application.Services
             _dbContext = dbContext;
         }
 
-        /// <inheritdoc />
         public Task PublishAsync(Guid tenantId, string type, string payload, CancellationToken cancellationToken = default)
         {
             // Additive within the caller's unit of work: the message is committed (or rolled

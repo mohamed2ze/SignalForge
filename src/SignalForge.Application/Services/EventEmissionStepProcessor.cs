@@ -8,10 +8,6 @@ using SignalForge.Domain.Models;
 
 namespace SignalForge.Application.Services
 {
-    /// <summary>
-    /// Processes Event Emission workflow steps.
-    /// Emits a new event that can trigger other workflows.
-    /// </summary>
     public class EventEmissionStepProcessor : IStepProcessor
     {
         private readonly IEventIngestionService _eventIngestionService;
@@ -27,7 +23,6 @@ namespace SignalForge.Application.Services
             _logger = logger;
         }
 
-        /// <inheritdoc />
         public async Task<bool> ProcessAsync(
             WorkflowStepExecution stepExecution,
             StepExecutionContext? context,

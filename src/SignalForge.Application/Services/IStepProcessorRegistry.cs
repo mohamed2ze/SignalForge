@@ -2,9 +2,6 @@ using System.Collections.Generic;
 
 namespace SignalForge.Application.Services;
 
-/// <summary>
-/// Resolves step processors by their step-type key.
-/// </summary>
 public interface IStepProcessorRegistry
 {
     /// <summary>

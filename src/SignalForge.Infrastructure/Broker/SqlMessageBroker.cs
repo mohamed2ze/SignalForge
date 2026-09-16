@@ -22,7 +22,6 @@ namespace SignalForge.Infrastructure.Broker
             _db = db;
         }
 
-        /// <inheritdoc />
         public async Task<bool> PublishAsync(
             string type,
             string payload,
@@ -41,14 +40,12 @@ namespace SignalForge.Infrastructure.Broker
             return true;
         }
 
-        /// <inheritdoc />
         public IReadOnlyList<BrokerMessage> GetAll()
             => _db.BrokerMessages
                 .AsNoTracking()
                 .OrderBy(m => m.PublishedAt)
                 .ToList();
 
-        /// <inheritdoc />
         public async Task<IReadOnlyList<BrokerMessage>> GetAllAsync(
             CancellationToken cancellationToken = default)
             => await _db.BrokerMessages

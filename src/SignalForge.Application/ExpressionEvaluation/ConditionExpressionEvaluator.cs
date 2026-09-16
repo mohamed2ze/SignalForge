@@ -4,10 +4,6 @@ using System.Text.Json.Nodes;
 
 namespace SignalForge.Application.ExpressionEvaluation;
 
-/// <summary>
-/// Result of evaluating a condition expression.
-/// On error the value defaults to <see langword="false"/> and <see cref="Error"/> carries the message.
-/// </summary>
 public sealed record ConditionEvaluationResult(bool Value, string? Error);
 
 /// <summary>

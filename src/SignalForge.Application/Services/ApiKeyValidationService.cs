@@ -5,9 +5,6 @@ using SignalForge.Domain.ValueObjects;
 
 namespace SignalForge.Application.Services;
 
-/// <summary>
-/// Implementation of API key validation service.
-/// </summary>
 public class ApiKeyValidationService : IApiKeyValidationService
 {
     private readonly ISignalForgeDbContext _dbContext;
@@ -19,7 +16,6 @@ public class ApiKeyValidationService : IApiKeyValidationService
         _logger = logger;
     }
 
-    /// <inheritdoc />
     public async Task<ApiKeyValidationResult> ValidateApiKeyAsync(string apiKey)
     {
         if (string.IsNullOrWhiteSpace(apiKey))

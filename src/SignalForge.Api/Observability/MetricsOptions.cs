@@ -9,9 +9,7 @@ public class MetricsOptions
 {
     public const string SectionName = "Metrics";
 
-    /// <summary>Whether the <c>/metrics</c> Prometheus endpoint is exposed. Defaults to on.</summary>
     public bool Enabled { get; set; } = true;
 
-    /// <summary>How often the outbox/execution backlog gauges are refreshed from the database.</summary>
     public int RefreshSeconds { get; set; } = 15;
 }

@@ -103,7 +103,6 @@ public sealed class RateLimitingTests
         await ctx.SaveChangesAsync();
     }
 
-    /// <summary>Hosts the real API with a small fixed-window budget and its own seeded tenant.</summary>
     private sealed class LowLimitFactory : WebApplicationFactory<Program>
     {
         private readonly MsSqlContainerFixture _database;

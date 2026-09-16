@@ -6,16 +6,8 @@ using SignalForge.Application.Services;
 
 namespace SignalForge.Application
 {
-    /// <summary>
-    /// Extension methods for registering application services.
-    /// </summary>
     public static class ServiceCollectionExtensions
     {
-        /// <summary>
-        /// Adds application services to the service collection.
-        /// </summary>
-        /// <param name="services">The service collection</param>
-        /// <returns>The service collection for chaining</returns>
         public static IServiceCollection AddApplicationServices(this IServiceCollection services)
         {
             // Register other application services first (to avoid circular dependency issues during validation)

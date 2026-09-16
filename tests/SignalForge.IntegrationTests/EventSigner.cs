@@ -16,9 +16,6 @@ public static class EventSigner
 {
     private static readonly JsonSerializerOptions CamelCase = new(JsonSerializerDefaults.Web);
 
-    /// <summary>
-    /// Serializes an object to the camelCase JSON wire format used by the API.
-    /// </summary>
     public static string CamelJson<T>(T value) => JsonSerializer.Serialize(value, CamelCase);
 
     /// <summary>

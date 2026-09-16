@@ -36,7 +36,6 @@ public class OutboxProcessor : IOutboxProcessor
         _currentBackoff = TimeSpan.FromSeconds(_options.PollIntervalSeconds);
     }
 
-    /// <inheritdoc />
     public async Task<TimeSpan> ProcessBatchAsync(CancellationToken cancellationToken = default)
     {
         try

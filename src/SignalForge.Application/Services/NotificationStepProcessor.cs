@@ -37,7 +37,6 @@ public class NotificationStepProcessor : IStepProcessor
         _logger = logger;
     }
 
-    /// <inheritdoc />
     public async Task<bool> ProcessAsync(
         WorkflowStepExecution stepExecution,
         StepExecutionContext? context,

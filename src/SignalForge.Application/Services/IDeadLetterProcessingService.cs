@@ -5,20 +5,8 @@ using SignalForge.Domain.Models;
 
 namespace SignalForge.Application.Services;
 
-/// <summary>
-/// Service for processing dead letter messages.
-/// </summary>
 public interface IDeadLetterProcessingService
 {
-    /// <summary>
-    /// Gets dead letter messages for a tenant with optional filtering.
-    /// </summary>
-    /// <param name="tenantId">The tenant ID</param>
-    /// <param name="skip">Number of records to skip for pagination</param>
-    /// <param name="take">Number of records to take</param>
-    /// <param name="onlyUnprocessed">If true, returns only unprocessed dead letters</param>
-    /// <param name="cancellationToken">Cancellation token</param>
-    /// <returns>A list of dead letter messages</returns>
     Task<List<DeadLetterMessage>> GetDeadLettersAsync(
         Guid tenantId,
         int skip = 0,
@@ -26,36 +14,16 @@ public interface IDeadLetterProcessingService
         bool onlyUnprocessed = false,
         CancellationToken cancellationToken = default);
 
-    /// <summary>
-    /// Gets a dead letter message by its ID for a specific tenant.
-    /// </summary>
-    /// <param name="deadLetterId">The dead letter message ID</param>
-    /// <param name="tenantId">The tenant ID</param>
-    /// <param name="cancellationToken">Cancellation token</param>
-    /// <returns>The dead letter message if found and belongs to the tenant, otherwise null</returns>
     Task<DeadLetterMessage?> GetDeadLetterByIdAsync(
         Guid deadLetterId,
         Guid tenantId,
         CancellationToken cancellationToken = default);
 
-    /// <summary>
-    /// Marks a dead letter message as processed (manually handled).
-    /// </summary>
-    /// <param name="deadLetterId">The dead letter message ID</param>
-    /// <param name="tenantId">The tenant ID</param>
-    /// <param name="cancellationToken">Cancellation token</param>
-    /// <returns>True if the dead letter was found and marked as processed, false otherwise</returns>
     Task<bool> MarkAsProcessedAsync(
         Guid deadLetterId,
         Guid tenantId,
         CancellationToken cancellationToken = default);
 
-    /// <summary>
-    /// Gets counts of dead letter messages for a tenant.
-    /// </summary>
-    /// <param name="tenantId">The tenant ID</param>
-    /// <param name="cancellationToken">Cancellation token</param>
-    /// <returns>Dead letter counts</returns>
     Task<DeadLetterCounts> GetDeadLetterCountsAsync(
         Guid tenantId,
         CancellationToken cancellationToken = default);
@@ -93,9 +61,6 @@ public interface IDeadLetterProcessingService
         CancellationToken cancellationToken = default);
 }
 
-/// <summary>
-/// Counts of dead letter messages.
-/// </summary>
 public class DeadLetterCounts
 {
     public int Total { get; set; }
@@ -116,7 +81,6 @@ public sealed record DeadLetterQueryFilter(
     int Page,
     int PageSize);
 
-/// <summary>Server-side paged dead-letter result (page is 1-based).</summary>
 public sealed record PagedDeadLettersResult(
     IReadOnlyList<DeadLetterMessage> Items,
     int Page,
@@ -129,7 +93,6 @@ public enum DeadLetterReplayStatus
     /// <summary>A requeue was created and the replay recorded on the dead letter.</summary>
     Replayed,
 
-    /// <summary>The dead letter does not exist for this tenant.</summary>
     NotFound,
 
     /// <summary>A replay is already in flight (unprocessed requeue); no duplicate created.</summary>

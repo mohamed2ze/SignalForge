@@ -15,7 +15,6 @@ namespace SignalForge.Infrastructure.Data;
 /// </summary>
 public sealed class SqlUniqueKeyViolationDetector : IUniqueViolationDetector
 {
-    /// <inheritdoc />
     public bool IsUniqueViolation(Exception exception)
     {
         ArgumentNullException.ThrowIfNull(exception);

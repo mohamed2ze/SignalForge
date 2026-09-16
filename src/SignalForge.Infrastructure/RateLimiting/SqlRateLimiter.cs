@@ -21,7 +21,6 @@ public sealed class SqlRateLimiter : IRateLimiter
         _serviceProvider = serviceProvider;
     }
 
-    /// <inheritdoc />
     public async Task<long> IncrementAsync(
         string partitionKey,
         long windowKey,
@@ -48,7 +47,6 @@ public sealed class SqlRateLimiter : IRateLimiter
             .SingleAsync(cancellationToken);
     }
 
-    /// <inheritdoc />
     public async Task<long> GetCountAsync(
         string partitionKey,
         long windowKey,

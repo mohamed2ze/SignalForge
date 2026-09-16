@@ -33,7 +33,6 @@ namespace SignalForge.Application.Services
             _logger = logger;
         }
 
-        /// <inheritdoc />
         public async Task<WorkflowExecution> StartWorkflowExecutionAsync(
             Guid workflowId,
             Guid workflowVersionId,
@@ -95,11 +94,9 @@ namespace SignalForge.Application.Services
             return execution;
         }
 
-        /// <inheritdoc />
         public Task<bool> AdvanceWorkflowExecutionAsync(Guid executionId, CancellationToken cancellationToken = default)
             => _advancer.AdvanceWorkflowExecutionAsync(executionId, cancellationToken);
 
-        /// <inheritdoc />
         public async Task<ScheduleStepRetryResult> ScheduleStepRetryAsync(
             Guid executionId,
             Guid stepExecutionId,
@@ -150,7 +147,6 @@ namespace SignalForge.Application.Services
             return new ScheduleStepRetryResult(StepRetryStatus.Scheduled, stepExecution);
         }
 
-        /// <inheritdoc />
         public async Task<WorkflowExecution?> GetWorkflowExecutionByIdAsync(Guid executionId, Guid tenantId)
         {
             // Include step executions so callers (e.g. the API step list endpoint) observe the

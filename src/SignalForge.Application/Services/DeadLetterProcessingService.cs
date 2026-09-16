@@ -7,9 +7,6 @@ using SignalForge.Domain.Models;
 
 namespace SignalForge.Application.Services;
 
-/// <summary>
-/// Implementation of dead letter processing service.
-/// </summary>
 public class DeadLetterProcessingService : IDeadLetterProcessingService
 {
     private readonly ISignalForgeDbContext _dbContext;
@@ -23,7 +20,6 @@ public class DeadLetterProcessingService : IDeadLetterProcessingService
         _uniqueViolationDetector = uniqueViolationDetector;
     }
 
-    /// <inheritdoc />
     public async Task<List<DeadLetterMessage>> GetDeadLettersAsync(
         Guid tenantId,
         int skip = 0,
@@ -50,7 +46,6 @@ public class DeadLetterProcessingService : IDeadLetterProcessingService
             .ToListAsync(cancellationToken);
     }
 
-    /// <inheritdoc />
     public async Task<PagedDeadLettersResult> GetDeadLettersPagedAsync(
         Guid tenantId,
         DeadLetterQueryFilter filter,
@@ -101,7 +96,6 @@ public class DeadLetterProcessingService : IDeadLetterProcessingService
         return new PagedDeadLettersResult(items, filter.Page, filter.PageSize, totalCount);
     }
 
-    /// <inheritdoc />
     public async Task<DeadLetterReplayResult> ReplayAsync(
         Guid tenantId,
         Guid deadLetterId,
@@ -154,7 +148,6 @@ public class DeadLetterProcessingService : IDeadLetterProcessingService
         return new DeadLetterReplayResult(DeadLetterReplayStatus.Replayed, deadLetter);
     }
 
-    /// <inheritdoc />
     public async Task<DeadLetterMessage?> GetDeadLetterByIdAsync(
         Guid deadLetterId,
         Guid tenantId,
@@ -168,7 +161,6 @@ public class DeadLetterProcessingService : IDeadLetterProcessingService
                 dlm.TenantId == tenantId, cancellationToken);
     }
 
-    /// <inheritdoc />
     public async Task<bool> MarkAsProcessedAsync(
         Guid deadLetterId,
         Guid tenantId,
@@ -189,7 +181,6 @@ public class DeadLetterProcessingService : IDeadLetterProcessingService
         return true;
     }
 
-    /// <inheritdoc />
     public async Task<DeadLetterCounts> GetDeadLetterCountsAsync(
         Guid tenantId,
         CancellationToken cancellationToken = default)

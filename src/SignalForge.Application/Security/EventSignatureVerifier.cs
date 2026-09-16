@@ -23,7 +23,6 @@ public static class EventSignatureVerifier
     public const string SignatureHeader = "X-SignalForge-Signature";
     public const string SchemeId = "sha256";
 
-    /// <summary>Maximum accepted drift between the signed timestamp and the server clock.</summary>
     public static readonly TimeSpan MaxClockSkew = TimeSpan.FromSeconds(300);
 
     /// <summary>
@@ -37,9 +36,6 @@ public static class EventSignatureVerifier
         return $"{SchemeId}=" + Convert.ToHexString(hash).ToLowerInvariant();
     }
 
-    /// <summary>
-    /// Parses a Unix-seconds timestamp header value.
-    /// </summary>
     public static bool TryParseUnixSeconds(string? value, out long timestampUnixSeconds)
         => long.TryParse(value, NumberStyles.None, CultureInfo.InvariantCulture, out timestampUnixSeconds);
 

@@ -11,38 +11,16 @@ namespace SignalForge.Application.Services
     /// </summary>
     public interface IWorkflowService
     {
-        /// <summary>
-        /// Lists all non-deleted workflows for a tenant.
-        /// </summary>
         Task<List<Workflow>> GetWorkflowsAsync(Guid tenantId, CancellationToken cancellationToken = default);
 
-        /// <summary>
-        /// Gets a workflow (with its versions and steps) for a tenant.
-        /// Returns null if not found or not owned by the tenant.
-        /// </summary>
         Task<Workflow?> GetWorkflowByIdAsync(Guid workflowId, Guid tenantId, CancellationToken cancellationToken = default);
 
-        /// <summary>
-        /// Gets a single version (with its steps) for a tenant.
-        /// Returns null if not found or not owned by the tenant.
-        /// </summary>
         Task<WorkflowVersion?> GetWorkflowVersionAsync(Guid versionId, Guid tenantId, CancellationToken cancellationToken = default);
 
-        /// <summary>
-        /// Creates a workflow and its initial draft version (v1).
-        /// </summary>
         Task<Workflow> CreateWorkflowAsync(Guid tenantId, string name, string? description = null, CancellationToken cancellationToken = default);
 
-        /// <summary>
-        /// Updates a workflow's name/description.
-        /// Returns null if not found or not owned by the tenant.
-        /// </summary>
         Task<Workflow?> UpdateWorkflowAsync(Guid workflowId, Guid tenantId, string name, string? description = null, CancellationToken cancellationToken = default);
 
-        /// <summary>
-        /// Soft-deletes a workflow.
-        /// Returns false if not found or not owned by the tenant.
-        /// </summary>
         Task<bool> DeleteWorkflowAsync(Guid workflowId, Guid tenantId, CancellationToken cancellationToken = default);
 
         /// <summary>
@@ -76,17 +54,10 @@ namespace SignalForge.Application.Services
         /// </summary>
         Task<WorkflowStep?> UpdateStepAsync(Guid workflowVersionId, Guid tenantId, Guid stepId, UpdateStepCommand command, CancellationToken cancellationToken = default);
 
-        /// <summary>
-        /// Enables or disables a step on a draft version. Returns null when not found / not owned;
-        /// throws InvalidOperationException when the version is published.
-        /// </summary>
+        /// <summary>Enables/disables a step on a draft. Null when not found/owned; throws when published.</summary>
         Task<WorkflowStep?> SetStepEnabledAsync(Guid workflowVersionId, Guid tenantId, Guid stepId, bool enabled, CancellationToken cancellationToken = default);
 
-        /// <summary>
-        /// Removes a step from a draft version, renumbering the remaining steps contiguously.
-        /// Returns false when not found / not owned; throws InvalidOperationException when the
-        /// version is published.
-        /// </summary>
+        /// <summary>Removes a step, renumbering the rest contiguously. False when not found/owned; throws when published.</summary>
         Task<bool> RemoveStepAsync(Guid workflowVersionId, Guid tenantId, Guid stepId, CancellationToken cancellationToken = default);
 
         /// <summary>

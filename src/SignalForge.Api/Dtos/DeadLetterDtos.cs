@@ -2,9 +2,6 @@ using SignalForge.Domain.Models;
 
 namespace SignalForge.Api.Dtos;
 
-/// <summary>
-/// Response model for dead letter message data.
-/// </summary>
 public class DeadLetterDto
 {
     public Guid Id { get; set; }
@@ -60,9 +57,6 @@ public class PagedDeadLettersDto
     public int TotalCount { get; set; }
 }
 
-/// <summary>
-/// Response model for dead letter counts.
-/// </summary>
 public class DeadLetterCountsDto
 {
     public int Total { get; set; }

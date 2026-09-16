@@ -1,9 +1,5 @@
 namespace SignalForge.Domain.Models;
 
-/// <summary>
-/// Represents a step within a workflow version.
-/// Different step types implement different behaviors.
-/// </summary>
 public class WorkflowStep
 {
     public Guid Id { get; private set; }
@@ -45,17 +41,6 @@ public class WorkflowStep
         UpdatedAt = DateTime.UtcNow;
     }
 
-    /// <summary>
-    /// Creates a new workflow step.
-    /// </summary>
-    /// <param name="workflowVersionId">The workflow version ID</param>
-    /// <param name="stepNumber">The step number (order)</param>
-    /// <param name="stepType">The type of step</param>
-    /// <param name="configuration">JSON configuration for the step</param>
-    /// <param name="name">Optional human-readable name</param>
-    /// <param name="description">Optional description</param>
-    /// <param name="isEnabled">Whether the step is enabled</param>
-    /// <returns>A new WorkflowStep instance</returns>
     public static WorkflowStep Create(
         Guid workflowVersionId,
         int stepNumber,
@@ -85,13 +70,6 @@ public class WorkflowStep
             isEnabled);
     }
 
-    /// <summary>
-    /// Updates the step information.
-    /// </summary>
-    /// <param name="name">The new step name</param>
-    /// <param name="description">The new description</param>
-    /// <param name="configuration">The new configuration</param>
-    /// <param name="isEnabled">Whether the step is enabled</param>
     public void UpdateInfo(
         string? name = null,
         string? description = null,
@@ -117,28 +95,18 @@ public class WorkflowStep
         UpdatedAt = DateTime.UtcNow;
     }
 
-    /// <summary>
-    /// Disables the step.
-    /// </summary>
     public void Disable()
     {
         IsEnabled = false;
         UpdatedAt = DateTime.UtcNow;
     }
 
-    /// <summary>
-    /// Enables the step.
-    /// </summary>
     public void Enable()
     {
         IsEnabled = true;
         UpdatedAt = DateTime.UtcNow;
     }
 
-    /// <summary>
-    /// Moves the step to a new position in the version's sequence.
-    /// </summary>
-    /// <param name="stepNumber">The new 1-based step number</param>
     public void MoveTo(int stepNumber)
     {
         if (stepNumber <= 0)

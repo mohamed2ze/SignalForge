@@ -16,7 +16,6 @@ public class SmsNotificationOptions
     /// <summary>The gateway credential. Never logged.</summary>
     public string? ApiKey { get; set; }
 
-    /// <summary>Optional sender id/number included in the request body.</summary>
     public string? FromPhone { get; set; }
 
     /// <summary>Request timeout before the transport fails.</summary>

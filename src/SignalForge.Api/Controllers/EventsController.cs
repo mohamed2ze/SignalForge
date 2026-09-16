@@ -8,9 +8,6 @@ using static SignalForge.Api.Controllers.ApiControllerExtensions;
 
 namespace SignalForge.Api.Controllers;
 
-/// <summary>
-/// Controller for ingesting events with idempotency support.
-/// </summary>
 [ApiController]
 [Route("api/events")]
 [Produces("application/json")]
@@ -118,11 +115,6 @@ public class EventsController : ControllerBase
         }
     }
 
-    /// <summary>
-    /// Gets an event by its ID.
-    /// </summary>
-    /// <param name="id">The event ID</param>
-    /// <returns>The event if found</returns>
     [HttpGet("{id:guid}")]
     [ProducesResponseType(typeof(EventDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
