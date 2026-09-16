@@ -27,6 +27,13 @@ public class WorkflowExecution
     /// </summary>
     public DateTime? ClaimedAt { get; private set; }
 
+    /// <summary>
+    /// UTC instant of the last mutation. Doubles as an optimistic-concurrency token (rowversion
+    /// equivalent, always set client-side) so the HTTP retry endpoint and the worker can never
+    /// silently overwrite each other's commit.
+    /// </summary>
+    public DateTime UpdatedAt { get; private set; }
+
     // Navigation properties
     public Workflow Workflow { get; private set; } = default!;
     public WorkflowVersion WorkflowVersion { get; private set; } = default!;
@@ -51,6 +58,7 @@ public class WorkflowExecution
         CurrentStepNumber = 0;
         StartedAt = DateTime.UtcNow;
         RetryCount = 0;
+        UpdatedAt = DateTime.UtcNow;
     }
 
     /// <summary>
@@ -84,6 +92,7 @@ public class WorkflowExecution
             throw new InvalidOperationException($"Cannot start execution in {Status} status");
 
         Status = WorkflowExecutionStatus.Running;
+        UpdatedAt = DateTime.UtcNow;
     }
 
     /// <summary>
@@ -96,6 +105,7 @@ public class WorkflowExecution
 
         Status = WorkflowExecutionStatus.Succeeded;
         CompletedAt = DateTime.UtcNow;
+        UpdatedAt = DateTime.UtcNow;
     }
 
     /// <summary>
@@ -110,6 +120,7 @@ public class WorkflowExecution
         Status = WorkflowExecutionStatus.Failed;
         CompletedAt = DateTime.UtcNow;
         ErrorMessage = errorMessage;
+        UpdatedAt = DateTime.UtcNow;
     }
 
     /// <summary>
@@ -122,6 +133,7 @@ public class WorkflowExecution
 
         Status = WorkflowExecutionStatus.Cancelled;
         CompletedAt = DateTime.UtcNow;
+        UpdatedAt = DateTime.UtcNow;
     }
 
     /// <summary>
@@ -133,6 +145,7 @@ public class WorkflowExecution
             throw new InvalidOperationException($"Cannot advance step in {Status} status");
 
         CurrentStepNumber++;
+        UpdatedAt = DateTime.UtcNow;
     }
 
     /// <summary>
@@ -148,6 +161,7 @@ public class WorkflowExecution
             throw new ArgumentOutOfRangeException(nameof(stepNumber), "Step number must be positive");
 
         CurrentStepNumber = stepNumber;
+        UpdatedAt = DateTime.UtcNow;
     }
 
     /// <summary>
@@ -162,6 +176,7 @@ public class WorkflowExecution
         CurrentStepNumber = 0;
         CompletedAt = null;
         ErrorMessage = null;
+        UpdatedAt = DateTime.UtcNow;
     }
 
     /// <summary>
@@ -194,6 +209,7 @@ public class WorkflowExecution
             throw new ArgumentException("Claim time must be UTC", nameof(claimedAtUtc));
 
         ClaimedAt = claimedAtUtc;
+        UpdatedAt = DateTime.UtcNow;
     }
 
     /// <summary>
@@ -203,6 +219,7 @@ public class WorkflowExecution
     public void ReleaseClaim()
     {
         ClaimedAt = null;
+        UpdatedAt = DateTime.UtcNow;
     }
 }
 

@@ -82,6 +82,8 @@ public sealed class DurableBrokerTests : ApiTestBase
                 await ctx.SaveChangesAsync();
                 await new OutboxPublisher(ctx).PublishAsync(TenantId, "OrderCreated", "{\"orderId\":1}");
                 await new OutboxPublisher(ctx).PublishAsync(TenantId, "PaymentReceived", "{\"paymentId\":2}");
+                // No surrounding unit of work: commit the staged messages explicitly.
+                await ctx.SaveChangesAsync();
             }
 
             // "Worker #1" publishes two outbox messages to the SQL-backed broker.

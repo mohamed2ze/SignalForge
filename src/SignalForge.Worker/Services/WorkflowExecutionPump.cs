@@ -47,12 +47,16 @@ public class WorkflowExecutionPump : IWorkflowExecutionPump
             var now = DateTime.UtcNow;
             var leaseWatermark = now.AddSeconds(-_options.ClaimLeaseSeconds);
 
-            // Select candidates whose next step is not already in flight (Pending/Running):
-            // a step must not be double-started by repeated polls. Failed/Retrying steps are
-            // allowed through — the orchestrator re-enters them in place (retries on the same
-            // record) or fails the execution once attempts are exhausted. Leased executions
-            // (ClaimedAt newer than the lease watermark) are invisible to this worker, so two
-            // workers can never claim the same execution.
+            // Select candidates whose next step is not freshly in flight: a step must not be
+            // double-started by repeated polls. Pending/Running marks are the crash-window
+            // (created but never finished) or the reclaim-after-crash case respectively, so they
+            // block candidacy ONLY while they are fresh (StartedAt within the claim lease). Once
+            // the claimed execution's lease expires, the stale next step is requeued below and the
+            // execution is admitted again — a crashed worker can never leave an execution parked.
+            // Failed/Retrying steps are always allowed through — the orchestrator re-enters them in
+            // place (retries on the same record) or fails the execution once attempts are
+            // exhausted. Leased executions (ClaimedAt newer than the lease watermark) are invisible
+            // to this worker, so two workers can never claim the same execution.
             var candidateIds = await dbContext.WorkflowExecutions
                 .Where(e => e.Status == WorkflowExecutionStatus.Running)
                 .Where(e => e.ClaimedAt == null || e.ClaimedAt < leaseWatermark)
@@ -60,7 +64,8 @@ public class WorkflowExecutionPump : IWorkflowExecutionPump
                     se.WorkflowExecutionId == e.Id &&
                     se.StepNumber == e.CurrentStepNumber + 1 &&
                     (se.Status == WorkflowStepExecutionStatus.Pending ||
-                     se.Status == WorkflowStepExecutionStatus.Running)))
+                     se.Status == WorkflowStepExecutionStatus.Running) &&
+                    se.StartedAt >= leaseWatermark))
                 .OrderBy(e => e.StartedAt)
                 .ThenBy(e => e.Id) // Deterministic tiebreak between same-instant executions
                 .Select(e => e.Id)
@@ -82,10 +87,37 @@ public class WorkflowExecutionPump : IWorkflowExecutionPump
                 return TimeSpan.FromSeconds(_options.PollIntervalSeconds);
 
             var candidates = await dbContext.WorkflowExecutions
+                .Include(e => e.StepExecutions)
                 .Where(e => claimedIds.Contains(e.Id))
                 .OrderBy(e => e.StartedAt)
                 .ThenBy(e => e.Id)
                 .ToListAsync(cancellationToken);
+
+            // Crash recovery: a Running step whose worker died mid-step (lease expired) must be
+            // requeued to Pending before the orchestrator re-enters it, or the advancer would see
+            // a live Running step and (correctly) decline to advance. The claim above guarantees no
+            // other worker can be making progress on these rows right now.
+            var requeuedAny = false;
+            foreach (var candidate in candidates)
+            {
+                var staleNextSteps = candidate.StepExecutions
+                    .Where(se => se.StepNumber == candidate.CurrentStepNumber + 1 &&
+                                 se.Status == WorkflowStepExecutionStatus.Running &&
+                                 se.StartedAt < leaseWatermark)
+                    .ToList();
+
+                foreach (var staleStep in staleNextSteps)
+                {
+                    staleStep.RequeueForRestart();
+                    requeuedAny = true;
+                    _logger.LogInformation(
+                        "Requeued stale running step {stepExecutionId} of execution {executionId} " +
+                        "after worker crash", staleStep.Id, candidate.Id);
+                }
+            }
+
+            if (requeuedAny)
+                await dbContext.SaveChangesAsync(cancellationToken);
 
             foreach (var candidate in candidates)
             {

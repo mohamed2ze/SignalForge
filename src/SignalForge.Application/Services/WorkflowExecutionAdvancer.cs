@@ -88,17 +88,40 @@ public class WorkflowExecutionAdvancer : IWorkflowExecutionAdvancer
         }
 
         // Re-entry handling: a step execution may already exist for this position.
-        // - In-flight (Pending/Running) or a retry that isn't due yet → busy, nothing to do.
+        // - Running (fresh), or a retry that isn't due yet → busy, nothing to do. A Running step
+        //   left behind by a crashed worker is requeued to Pending by the pump (which only selects
+        //   executions whose next step is stale), so a live Running step never reaches here.
+        // - Succeeded/Cancelled → the execution has been routed back onto an already-finished step
+        //   (e.g. a conditional branch looping onto a past step); it can never progress, so
+        //   dead-letter it once and fail the execution (previously PrepareForRetry threw on a
+        //   terminal status here and the pump re-released the lease forever — a poison execution).
         // - Failed with attempts remaining, or Retrying and due → retry in place (no duplicates).
         // - Failed with attempts exhausted → fail the execution.
+        // - Pending → the crash-window record a stale worker created but never got to start; the
+        //   pump admitted it through the leaseWatermark guard, so run it in place (no duplicates).
         var existing = execution.StepExecutions
             .FirstOrDefault(se => se.StepNumber == nextStepNumber);
 
         WorkflowStepExecution stepExecution;
         if (existing != null)
         {
-            if (existing.Status == WorkflowStepExecutionStatus.Pending ||
-                existing.Status == WorkflowStepExecutionStatus.Running ||
+            if (existing.Status == WorkflowStepExecutionStatus.Succeeded ||
+                existing.Status == WorkflowStepExecutionStatus.Cancelled)
+            {
+                _logger.LogWarning(
+                    "Execution {executionId} routed onto already-completed step {stepNumber} " +
+                    "({stepStatus}); failing execution and dead-lettering it",
+                    execution.Id, existing.StepNumber, existing.Status);
+
+                execution.Fail(
+                    $"Step {existing.StepNumber} is already completed ({existing.Status}) but was routed onto again");
+                _dbContext.DeadLetterMessages.Add(
+                    DeadLetterMessage.CreateFromFailedStep(existing, execution, nextStep.StepType));
+                await _dbContext.SaveChangesAsync(cancellationToken);
+                return true;
+            }
+
+            if (existing.Status == WorkflowStepExecutionStatus.Running ||
                 (existing.Status == WorkflowStepExecutionStatus.Retrying &&
                  !existing.IsTimeToRetry()))
             {
@@ -108,15 +131,26 @@ public class WorkflowExecutionAdvancer : IWorkflowExecutionAdvancer
             if (existing.Status == WorkflowStepExecutionStatus.Failed &&
                 !existing.CanRetry())
             {
-                // Exhausted all attempts for this step, fail the execution
+                // Exhausted all attempts for this step, fail the execution and dead-letter it.
+                // (The step-retry policy normally dead-letters in the processor catch path; this
+                // backstop covers re-entry after the failure was already persisted.)
                 execution.Fail(
                     $"Step {existing.StepNumber} failed after maximum retry attempts");
+                _dbContext.DeadLetterMessages.Add(
+                    DeadLetterMessage.CreateFromFailedStep(existing, execution, nextStep.StepType));
                 await _dbContext.SaveChangesAsync(cancellationToken);
                 return true;
             }
 
-            existing.PrepareForRetry();
-            stepExecution = existing;
+            if (existing.Status == WorkflowStepExecutionStatus.Pending)
+            {
+                stepExecution = existing; // Stale crash-window record: start it in place
+            }
+            else
+            {
+                existing.PrepareForRetry();
+                stepExecution = existing;
+            }
         }
         else
         {

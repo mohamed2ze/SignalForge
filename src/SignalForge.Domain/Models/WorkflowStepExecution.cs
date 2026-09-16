@@ -20,6 +20,13 @@ public class WorkflowStepExecution
     public string? Output { get; private set; } // Step output/result
     public int? RouteToStepNumber { get; private set; } // Target step number when this step completes (branching), null = sequential next
 
+    /// <summary>
+    /// UTC instant of the last mutation. Doubles as an optimistic-concurrency token (rowversion
+    /// equivalent, always set client-side) so the HTTP retry endpoint and the worker can never
+    /// silently overwrite each other's commit.
+    /// </summary>
+    public DateTime UpdatedAt { get; private set; }
+
     // Navigation properties
     public WorkflowExecution WorkflowExecution { get; private set; } = default!;
     public WorkflowStep WorkflowStep { get; private set; } = default!;
@@ -41,6 +48,7 @@ public class WorkflowStepExecution
         AttemptNumber = 0;
         MaxAttempts = maxAttempts;
         StartedAt = DateTime.UtcNow;
+        UpdatedAt = DateTime.UtcNow;
     }
 
     /// <summary>
@@ -76,6 +84,7 @@ public class WorkflowStepExecution
         Status = WorkflowStepExecutionStatus.Running;
         AttemptNumber++;
         StartedAt = DateTime.UtcNow;
+        UpdatedAt = DateTime.UtcNow;
     }
 
     /// <summary>
@@ -92,6 +101,7 @@ public class WorkflowStepExecution
         CompletedAt = DateTime.UtcNow;
         Output = output;
         RouteToStepNumber = routeToStepNumber;
+        UpdatedAt = DateTime.UtcNow;
     }
 
     /// <summary>
@@ -109,6 +119,7 @@ public class WorkflowStepExecution
         Status = WorkflowStepExecutionStatus.Failed;
         CompletedAt = DateTime.UtcNow;
         ErrorMessage = errorMessage;
+        UpdatedAt = DateTime.UtcNow;
     }
 
     /// <summary>
@@ -121,6 +132,7 @@ public class WorkflowStepExecution
 
         Status = WorkflowStepExecutionStatus.Cancelled;
         CompletedAt = DateTime.UtcNow;
+        UpdatedAt = DateTime.UtcNow;
     }
 
     /// <summary>
@@ -137,6 +149,7 @@ public class WorkflowStepExecution
 
         Status = WorkflowStepExecutionStatus.Retrying;
         NextRetryAt = nextRetryAt;
+        UpdatedAt = DateTime.UtcNow;
     }
 
     /// <summary>
@@ -156,6 +169,23 @@ public class WorkflowStepExecution
 
         Status = WorkflowStepExecutionStatus.Pending;
         NextRetryAt = null; // Cleared when the step actually starts
+        UpdatedAt = DateTime.UtcNow;
+    }
+
+    /// <summary>
+    /// Requeues a step a worker left <see cref="WorkflowStepExecutionStatus.Running"/> when it died
+    /// mid-step (its lease expired, so a recovering pump has re-claimed the execution). Only a
+    /// Running step may be requeued; the recovering pump then starts it again — at-least-once, the
+    /// same guarantee the claim lease already provides across restarts.
+    /// </summary>
+    public void RequeueForRestart()
+    {
+        if (Status != WorkflowStepExecutionStatus.Running)
+            throw new InvalidOperationException($"Cannot requeue step execution in {Status} status");
+
+        Status = WorkflowStepExecutionStatus.Pending;
+        NextRetryAt = null;
+        UpdatedAt = DateTime.UtcNow;
     }
 
     /// <summary>

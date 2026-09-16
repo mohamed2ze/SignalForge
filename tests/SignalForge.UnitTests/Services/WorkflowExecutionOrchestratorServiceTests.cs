@@ -380,4 +380,96 @@ public class WorkflowExecutionOrchestratorServiceTests
         var missing = await orchestrator.ScheduleStepRetryAsync(execution.Id, Guid.NewGuid(), tenantId);
         Assert.Equal(StepRetryStatus.NotFound, missing.Status);
     }
+
+    [Fact]
+    public async Task Advancer_onto_an_already_completed_step_dead_letters_and_fails_execution()
+    {
+        var db = CreateDb();
+        var (workflowId, versionId, eventId, tenantId) = await SeedAsync(db, version =>
+        {
+            version.AddStep(1, nameof(StepType.LogAudit), """{"message":"one","logLevel":"information"}""");
+            version.AddStep(2, nameof(StepType.LogAudit), """{"message":"two","logLevel":"information"}""");
+            version.AddStep(3, nameof(StepType.LogAudit), """{"message":"three","logLevel":"information"}""");
+        });
+        var orchestrator = CreateOrchestrator(db);
+
+        var execution = await orchestrator.StartWorkflowExecutionAsync(workflowId, versionId, eventId, tenantId);
+
+        // A conditional branch routed the execution back onto a step whose NEXT step already ran
+        // to completion: step 3's record is Succeeded and CurrentStepNumber points at step 2.
+        var step3 = await db.WorkflowSteps.SingleAsync(s => s.WorkflowVersionId == versionId && s.StepNumber == 3);
+        var completedStep = WorkflowStepExecution.Create(execution.Id, step3.Id, 3);
+        completedStep.Start();
+        completedStep.Succeed();
+        execution.StepExecutions.Add(completedStep);
+        execution.RouteToStep(2);
+        await db.SaveChangesAsync();
+
+        // Re-entry onto the completed step must dead-letter once and fail the execution — never
+        // throw out of PrepareForRetry (the old poison loop) nor hang the pump.
+        Assert.True(await orchestrator.AdvanceWorkflowExecutionAsync(execution.Id));
+
+        Assert.Equal(WorkflowExecutionStatus.Failed, execution.Status);
+        var deadLetter = await db.DeadLetterMessages.SingleAsync();
+        Assert.Equal(completedStep.Id, deadLetter.WorkflowStepExecutionId);
+        Assert.Equal(execution.Id, deadLetter.WorkflowExecutionId);
+        Assert.Equal(nameof(StepType.LogAudit), deadLetter.FailedStepType);
+
+        // A second advance over the now-completed execution is a no-op, not another dead letter.
+        Assert.False(await orchestrator.AdvanceWorkflowExecutionAsync(execution.Id));
+        Assert.Equal(1, await db.DeadLetterMessages.CountAsync());
+    }
+
+    [Fact]
+    public async Task Concurrent_retry_scheduling_conflict_returns_not_eligible()
+    {
+        var db = CreateDb();
+        var (workflowId, versionId, eventId, tenantId) = await SeedAsync(db, version =>
+        {
+            version.AddStep(1, nameof(StepType.Delay), """{"seconds":0}""", "step-1");
+        });
+
+        // Real components everywhere except the retry policy, which simulates the worker having
+        // won the race (its committed schedule makes ours stale).
+        var realPolicy = new StepExecutionRetryPolicy(
+            db, Options.Create(new StepRetryPolicyOptions()), NullLogger<StepExecutionRetryPolicy>.Instance);
+        var advancer = new WorkflowExecutionAdvancer(
+            db, BuildProcessorRegistry(), realPolicy, NullLogger<WorkflowExecutionAdvancer>.Instance);
+        var orchestrator = new WorkflowExecutionOrchestratorService(
+            db, advancer, new ConcurrencyConflictRetryPolicy(), NullLogger<WorkflowExecutionOrchestratorService>.Instance);
+
+        var execution = await orchestrator.StartWorkflowExecutionAsync(workflowId, versionId, eventId, tenantId);
+        var step = await db.WorkflowSteps.SingleAsync(s => s.WorkflowVersionId == versionId && s.StepNumber == 1);
+        var stepExecution = WorkflowStepExecution.Create(execution.Id, step.Id, 1);
+        stepExecution.Start();
+        stepExecution.Fail("simulated failure");
+        db.WorkflowStepExecutions.Add(stepExecution);
+        await db.SaveChangesAsync();
+
+        var result = await orchestrator.ScheduleStepRetryAsync(execution.Id, stepExecution.Id, tenantId);
+
+        // A DbUpdateConcurrencyException from the token check surfaces as NotEligible (HTTP 409),
+        // never a 500, and the step is left untouched for the worker's commit.
+        Assert.Equal(StepRetryStatus.NotEligible, result.Status);
+        Assert.Equal(WorkflowStepExecutionStatus.Failed, stepExecution.Status);
+    }
+
+    /// <summary>
+    /// Simulates the worker winning the retry-scheduling race: the UpdatedAt concurrency token
+    /// makes the second writer's SaveChanges throw exactly this exception.
+    /// </summary>
+    private sealed class ConcurrencyConflictRetryPolicy : IStepExecutionRetryPolicy
+    {
+        public Task<StepFailureResolution> ResolveFailureAsync(
+            WorkflowExecution execution,
+            WorkflowStepExecution stepExecution,
+            string stepType,
+            CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+
+        public Task ScheduleRetryAsync(
+            WorkflowStepExecution stepExecution,
+            CancellationToken cancellationToken = default)
+            => throw new DbUpdateConcurrencyException("step changed concurrently");
+    }
 }

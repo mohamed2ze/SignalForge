@@ -279,6 +279,86 @@ public class WorkflowExecutionPumpTests
     }
 
     [Fact]
+    public async Task Reclaims_execution_with_a_stale_running_step_and_requeues_it()
+    {
+        var options = NewInMemoryOptions();
+        var scopeFactory = BuildScopeFactory(options);
+        var (_, versionId, eventId, tenantId, stepId) = await SeedAsync(
+            scopeFactory, v => v.AddStep(1, nameof(StepType.LogAudit),
+                """{"message":"hi","logLevel":"information"}"""),
+            startExecution: true);
+
+        var stalePoint = DateTime.UtcNow.AddSeconds(-601);
+
+        // Simulate a worker that claimed the execution, started step 1, then died mid-step: the
+        // claim AND the step's StartedAt both predate the claim-lease window.
+        using (var scope = scopeFactory.CreateScope())
+        {
+            var db = (SignalForgeDbContext)scope.ServiceProvider.GetRequiredService<ISignalForgeDbContext>();
+            var execution = await db.WorkflowExecutions.SingleAsync();
+            var step = WorkflowStepExecution.Create(execution.Id, stepId, 1);
+            step.Start();
+            execution.Claim(stalePoint);
+            db.WorkflowStepExecutions.Add(step);
+            await db.SaveChangesAsync();
+            db.Entry(step).Property(s => s.StartedAt).CurrentValue = stalePoint;
+            await db.SaveChangesAsync();
+        }
+
+        // The stale claim admits the execution; the stale Running step must be requeued (not
+        // double-started) and then run to completion on the same record.
+        await CreatePump(scopeFactory).ProcessCycleAsync(CancellationToken.None);
+
+        using var verify = scopeFactory.CreateScope();
+        var verifyDb = (SignalForgeDbContext)verify.ServiceProvider.GetRequiredService<ISignalForgeDbContext>();
+        var after = await verifyDb.WorkflowExecutions.SingleAsync();
+        Assert.Equal(1, after.CurrentStepNumber);
+        Assert.Null(after.ClaimedAt); // lease released after the advance
+        var stepAfter = await verifyDb.WorkflowStepExecutions.SingleAsync();
+        Assert.Equal(WorkflowStepExecutionStatus.Succeeded, stepAfter.Status);
+        // The requeued recovery run is a fresh attempt (the crashed worker consumed attempt 1).
+        Assert.Equal(2, stepAfter.AttemptNumber);
+    }
+
+    [Fact]
+    public async Task Completes_a_step_left_pending_by_a_crashed_worker_without_duplicates()
+    {
+        var options = NewInMemoryOptions();
+        var scopeFactory = BuildScopeFactory(options);
+        var (_, versionId, eventId, tenantId, stepId) = await SeedAsync(
+            scopeFactory, v => v.AddStep(1, nameof(StepType.LogAudit),
+                """{"message":"hi","logLevel":"information"}"""),
+            startExecution: true);
+
+        var stalePoint = DateTime.UtcNow.AddSeconds(-601);
+
+        // Crash between the record-create save and the start save: a Pending step whose age
+        // predates the lease window. The pump must admit the execution and run it in place.
+        using (var scope = scopeFactory.CreateScope())
+        {
+            var db = (SignalForgeDbContext)scope.ServiceProvider.GetRequiredService<ISignalForgeDbContext>();
+            var execution = await db.WorkflowExecutions.SingleAsync();
+            var step = WorkflowStepExecution.Create(execution.Id, stepId, 1);
+            execution.Claim(stalePoint);
+            db.WorkflowStepExecutions.Add(step);
+            await db.SaveChangesAsync();
+            db.Entry(step).Property(s => s.StartedAt).CurrentValue = stalePoint;
+            await db.SaveChangesAsync();
+        }
+
+        await CreatePump(scopeFactory).ProcessCycleAsync(CancellationToken.None);
+
+        using var verify = scopeFactory.CreateScope();
+        var verifyDb = (SignalForgeDbContext)verify.ServiceProvider.GetRequiredService<ISignalForgeDbContext>();
+        var after = await verifyDb.WorkflowExecutions.SingleAsync();
+        Assert.Equal(1, after.CurrentStepNumber);
+        Assert.Single(await verifyDb.WorkflowStepExecutions.ToListAsync()); // in place, no duplicate
+        var stepAfter = await verifyDb.WorkflowStepExecutions.SingleAsync();
+        Assert.Equal(WorkflowStepExecutionStatus.Succeeded, stepAfter.Status);
+        Assert.Equal(1, stepAfter.AttemptNumber);
+    }
+
+    [Fact]
     public async Task Two_workers_never_advance_the_same_execution_in_the_same_cycle()
     {
         var options = NewInMemoryOptions();

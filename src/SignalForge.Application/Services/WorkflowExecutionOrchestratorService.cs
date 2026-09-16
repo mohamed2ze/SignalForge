@@ -120,7 +120,22 @@ namespace SignalForge.Application.Services
                 !stepExecution.CanRetry())
                 return new ScheduleStepRetryResult(StepRetryStatus.NotEligible, stepExecution);
 
-            await _retryPolicy.ScheduleRetryAsync(stepExecution, cancellationToken);
+            // The Worker may have advanced (or failed and rescheduled) this step between our read
+            // and this write. The UpdatedAt concurrency token turns that silently-lost update into
+            // a DbUpdateConcurrencyException; surface it as NotEligible (HTTP 409) rather than a
+            // 500, and never clobber the Worker's commit with a stale retry schedule.
+            try
+            {
+                await _retryPolicy.ScheduleRetryAsync(stepExecution, cancellationToken);
+            }
+            catch (DbUpdateConcurrencyException)
+            {
+                _logger.LogWarning(
+                    "Step {stepExecutionId} of execution {executionId} changed concurrently during " +
+                    "manual retry scheduling; the worker must have claimed it",
+                    stepExecutionId, executionId);
+                return new ScheduleStepRetryResult(StepRetryStatus.NotEligible, stepExecution);
+            }
             return new ScheduleStepRetryResult(StepRetryStatus.Scheduled, stepExecution);
         }
 

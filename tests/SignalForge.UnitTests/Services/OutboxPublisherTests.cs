@@ -17,6 +17,9 @@ public class OutboxPublisherTests
 
         var publisher = new OutboxPublisher(db);
         await publisher.PublishAsync(tenantId, "OrderCreated", """{"id":1}""");
+        // The publisher is additive within the caller's unit of work: the message becomes durable
+        // with the caller's own SaveChanges.
+        await db.SaveChangesAsync();
 
         var message = await db.OutboxMessages.SingleAsync();
 

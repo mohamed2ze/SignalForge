@@ -77,5 +77,13 @@ public class SignalForgeDbContext : DbContext, ISignalForgeDbContext
         modelBuilder.Entity<WorkflowStep>()
             .Property(ws => ws.UpdatedAt)
             .IsConcurrencyToken();
+
+        modelBuilder.Entity<WorkflowExecution>()
+            .Property(e => e.UpdatedAt)
+            .IsConcurrencyToken();
+
+        modelBuilder.Entity<WorkflowStepExecution>()
+            .Property(se => se.UpdatedAt)
+            .IsConcurrencyToken();
     }
 }

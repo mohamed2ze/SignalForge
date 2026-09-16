@@ -10,7 +10,12 @@ namespace SignalForge.Application.Services
     public interface IOutboxPublisher
     {
         /// <summary>
-        /// Publishes a message to the outbox within the current transaction.
+        /// Stages a message to the outbox within the current unit of work. The message is NOT
+        /// persisted by this call: the caller commits it with its own <c>SaveChangesAsync</c>, so
+        /// an outbox write can be committed atomically with the business change that produced it
+        /// (e.g. an emission step's success transition). Callers that have no surrounding unit of
+        /// work — such as the tests and standalone publish paths — must call
+        /// <c>SaveChangesAsync</c> themselves for the message to become durable.
         /// </summary>
         /// <param name="tenantId">The tenant the message belongs to</param>
         /// <param name="type">The message type (used for routing or handling)</param>

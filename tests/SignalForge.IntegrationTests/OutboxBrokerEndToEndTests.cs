@@ -55,6 +55,8 @@ public class OutboxBrokerEndToEndTests : ApiTestBase
             using (var ctx = new SignalForgeDbContext(options))
             {
                 await new OutboxPublisher(ctx).PublishAsync(TenantId, "OrderCreated", "{\"orderId\":1}");
+                // No surrounding unit of work: commit the staged message explicitly.
+                await ctx.SaveChangesAsync();
             }
 
             var broker = new InMemoryMessageBroker();
@@ -108,6 +110,8 @@ public class OutboxBrokerEndToEndTests : ApiTestBase
                 ctx.Tenants.Add(Tenant.CreateWithId(TenantId, "itest-broker"));
                 await ctx.SaveChangesAsync();
                 await new OutboxPublisher(ctx).PublishAsync(TenantId, "Test/Fail", "{\"boom\":true}");
+                // No surrounding unit of work: commit the staged message explicitly.
+                await ctx.SaveChangesAsync();
             }
 
             var broker = new TestFailRejectingBroker();
