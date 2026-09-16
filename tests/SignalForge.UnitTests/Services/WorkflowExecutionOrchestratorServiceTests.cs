@@ -454,6 +454,35 @@ public class WorkflowExecutionOrchestratorServiceTests
         Assert.Equal(WorkflowStepExecutionStatus.Failed, stepExecution.Status);
     }
 
+    [Fact]
+    public async Task Start_is_rejected_for_a_deactivated_tenant()
+    {
+        var db = CreateDb();
+        var (workflowId, versionId, eventId, tenantId) = await SeedAsync(db, version =>
+        {
+            version.AddStep(1, nameof(StepType.Delay), """{"seconds":0}""", "step-1");
+        });
+
+        // Soft-delete the tenant after the workflow/event were seeded, then attempt a start.
+        var tenant = await db.Tenants.SingleAsync();
+        tenant.Deactivate();
+        await db.SaveChangesAsync();
+
+        var orchestrator = CreateOrchestrator(db);
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => orchestrator.StartWorkflowExecutionAsync(workflowId, versionId, eventId, tenantId));
+
+        Assert.Contains(tenantId.ToString(), ex.Message);
+        Assert.Empty(await db.WorkflowExecutions.ToListAsync());
+
+        // Reactivating the tenant restores the ability to start executions.
+        tenant.Reactivate();
+        await db.SaveChangesAsync();
+        var execution = await orchestrator.StartWorkflowExecutionAsync(workflowId, versionId, eventId, tenantId);
+        Assert.NotNull(execution);
+        Assert.Equal(tenantId, execution.TenantId);
+    }
+
     /// <summary>
     /// Simulates the worker winning the retry-scheduling race: the UpdatedAt concurrency token
     /// makes the second writer's SaveChanges throw exactly this exception.

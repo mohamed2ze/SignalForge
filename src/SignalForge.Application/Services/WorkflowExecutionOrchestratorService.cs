@@ -41,6 +41,17 @@ namespace SignalForge.Application.Services
             Guid tenantId,
             CancellationToken cancellationToken = default)
         {
+            // Deactivated (soft-deleted) tenants cannot start new executions, mirroring the
+            // API-key auth gate (ApiKeyValidationService rejects DeletedAt tenants) and the
+            // pump/outbox filters that stop advancing their in-flight work.
+            var tenantActive = await _dbContext.Tenants
+                .AnyAsync(t => t.Id == tenantId && t.DeletedAt == null, cancellationToken);
+
+            if (!tenantActive)
+            {
+                throw new InvalidOperationException($"Tenant {tenantId} is deactivated");
+            }
+
             // Validate that the workflow exists and belongs to the tenant
             var workflow = await _dbContext.Workflows
                 .FirstOrDefaultAsync(w => w.Id == workflowId && w.TenantId == tenantId && w.DeletedAt == null, cancellationToken);

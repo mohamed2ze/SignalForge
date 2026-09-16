@@ -57,7 +57,11 @@ public class WorkflowExecutionPump : IWorkflowExecutionPump
             // place (retries on the same record) or fails the execution once attempts are
             // exhausted. Leased executions (ClaimedAt newer than the lease watermark) are invisible
             // to this worker, so two workers can never claim the same execution.
-            var candidateIds = await dbContext.WorkflowExecutions
+            // Deactivated (soft-deleted) tenants are excluded outright: their executions must stop
+            // advancing, mirroring the API-key auth gate (ApiKeyValidationService rejects
+            // DeletedAt tenants). Running executions simply stay put until the tenant reactivates.
+            var scanLimit = _options.BatchSize * _options.ScanMultiplier;
+            var scanned = await dbContext.WorkflowExecutions
                 .Where(e => e.Status == WorkflowExecutionStatus.Running)
                 .Where(e => e.ClaimedAt == null || e.ClaimedAt < leaseWatermark)
                 .Where(e => !dbContext.WorkflowStepExecutions.Any(se =>
@@ -66,11 +70,18 @@ public class WorkflowExecutionPump : IWorkflowExecutionPump
                     (se.Status == WorkflowStepExecutionStatus.Pending ||
                      se.Status == WorkflowStepExecutionStatus.Running) &&
                     se.StartedAt >= leaseWatermark))
+                .Where(e => dbContext.Tenants.Any(t => t.Id == e.TenantId && t.DeletedAt == null))
                 .OrderBy(e => e.StartedAt)
                 .ThenBy(e => e.Id) // Deterministic tiebreak between same-instant executions
-                .Select(e => e.Id)
-                .Take(_options.BatchSize)
+                .Select(e => new { e.Id, e.TenantId })
+                .Take(scanLimit)
                 .ToListAsync(cancellationToken);
+
+            // Per-tenant fairness: a flood from one tenant fills only its round-robin share of the
+            // batch, never the whole batch. `scanned` (not `candidateIds`) also carries TenantId.
+            var candidateIds = FairBatchSelector.PickFairBatch(
+                scanned.Select(s => (s.Id, s.TenantId)).ToList(),
+                _options.BatchSize);
 
             _logger.LogDebug("Polled {Count} runnable workflow executions", candidateIds.Count);
 

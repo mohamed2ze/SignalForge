@@ -409,4 +409,121 @@ public class WorkflowExecutionPumpTests
         Assert.Equal(10, await verifyDb.WorkflowExecutions.CountAsync());
         Assert.Equal(10, stepExecutions.Select(se => se.WorkflowExecutionId).Distinct().Count());
     }
+
+    [Fact]
+    public async Task Does_not_advance_an_execution_of_a_deactivated_tenant()
+    {
+        var options = NewInMemoryOptions();
+        var scopeFactory = BuildScopeFactory(options);
+        var (_, versionId, eventId, tenantId, stepId) = await SeedAsync(
+            scopeFactory, v => v.AddStep(1, nameof(StepType.LogAudit),
+                """{"message":"hi","logLevel":"information"}"""),
+            startExecution: true);
+
+        // Soft-delete the tenant after its execution was started: enforcement must stop in-flight
+        // advancement too (the pumps must not keep running a deactivated tenant's work).
+        using (var scope = scopeFactory.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<ISignalForgeDbContext>();
+            var tenant = await db.Tenants.SingleAsync();
+            tenant.Deactivate();
+            await db.SaveChangesAsync();
+        }
+
+        var delay = await CreatePump(scopeFactory).ProcessCycleAsync(CancellationToken.None);
+
+        Assert.Equal(TimeSpan.FromSeconds(2), delay);
+
+        using var verify = scopeFactory.CreateScope();
+        var verifyDb = verify.ServiceProvider.GetRequiredService<ISignalForgeDbContext>();
+        var execution = await verifyDb.WorkflowExecutions.SingleAsync();
+        Assert.Equal(0, execution.CurrentStepNumber); // untouched
+        Assert.Equal(WorkflowExecutionStatus.Running, execution.Status);
+        Assert.Empty(await verifyDb.WorkflowStepExecutions.ToListAsync());
+    }
+
+    [Fact]
+    public async Task One_tenants_flood_does_not_starve_a_quieter_tenants_execution()
+    {
+        var options = NewInMemoryOptions();
+        var scopeFactory = BuildScopeFactory(options);
+
+        // Seed six runnable executions under the "flood" tenant and one under "quiet", whose
+        // execution is STRICTLY the newest. BatchSize=3 with the default 5x scan: a global
+        // oldest-first batch of 3 would be entirely the flood tenant's (stranding the quieter
+        // tenant); the per-tenant round-robin must include the quieter tenant in the first batch.
+        var floodTenantId = Guid.NewGuid();
+        var quietTenantId = Guid.NewGuid();
+        var quietExecutionId = Guid.Empty;
+
+        using (var seedScope = scopeFactory.CreateScope())
+        {
+            var db = seedScope.ServiceProvider.GetRequiredService<ISignalForgeDbContext>();
+            var orchestrator = seedScope.ServiceProvider.GetRequiredService<IWorkflowExecutionOrchestratorService>();
+
+            db.Tenants.AddRange(
+                Tenant.CreateWithId(floodTenantId, "flood"),
+                Tenant.CreateWithId(quietTenantId, "quiet"));
+
+            var floodWorkflows = new List<Workflow>();
+            for (var i = 0; i < 6; i++)
+            {
+                var workflow = Workflow.Create(floodTenantId, $"flood-wf-{i}");
+                var version = workflow.CreateDraftVersion(1);
+                version.AddStep(1, nameof(StepType.LogAudit),
+                    """{"message":"hi","logLevel":"information"}""", $"flood-{i}");
+                workflow.Enable();
+                version.Publish();
+                floodWorkflows.Add(workflow);
+                db.Workflows.Add(workflow);
+            }
+
+            var quietWorkflow = Workflow.Create(quietTenantId, "quiet-wf");
+            var quietVersion = quietWorkflow.CreateDraftVersion(1);
+            quietVersion.AddStep(1, nameof(StepType.LogAudit),
+                """{"message":"hi","logLevel":"information"}""", "quiet-0");
+            quietWorkflow.Enable();
+            quietVersion.Publish();
+            db.Workflows.Add(quietWorkflow);
+            await db.SaveChangesAsync();
+
+            // Start the flood executions first, then the quieter tenant's, then force the quieter
+            // execution to be the newest in the scan so flat global ordering would omit it.
+            foreach (var wf in floodWorkflows)
+            {
+                var version = await db.WorkflowVersions.SingleAsync(v => v.WorkflowId == wf.Id);
+                var evt = Event.Create(floodTenantId, $"flood-evt-{wf.Id:N}", "order.created", DateTime.UtcNow, "{}");
+                db.Events.Add(evt);
+                await db.SaveChangesAsync();
+                await orchestrator.StartWorkflowExecutionAsync(wf.Id, version.Id, evt.Id, floodTenantId);
+            }
+
+            var quietEvent = Event.Create(quietTenantId, "quiet-evt", "order.created", DateTime.UtcNow, "{}");
+            db.Events.Add(quietEvent);
+            await db.SaveChangesAsync();
+            var seeded = await orchestrator.StartWorkflowExecutionAsync(
+                quietWorkflow.Id, quietVersion.Id, quietEvent.Id, quietTenantId);
+            quietExecutionId = seeded.Id;
+
+            var seededQuiet = await db.WorkflowExecutions.SingleAsync(e => e.Id == quietExecutionId);
+            ((SignalForgeDbContext)db).Entry(seededQuiet).Property(e => e.StartedAt).CurrentValue =
+                DateTime.UtcNow.AddHours(1);
+            await db.SaveChangesAsync();
+        }
+
+        var pump = CreatePump(scopeFactory, new ExecutionPumpOptions { BatchSize = 3, ScanMultiplier = 5 });
+        await pump.ProcessCycleAsync(CancellationToken.None);
+
+        using var scope = scopeFactory.CreateScope();
+        var pumpDb = scope.ServiceProvider.GetRequiredService<ISignalForgeDbContext>();
+        // Exactly a batch's worth advanced across both tenants (A0, B0, A1).
+        Assert.Equal(3, await pumpDb.WorkflowStepExecutions.CountAsync());
+        // The quieter tenant's execution was in the FIRST batch, not starved.
+        var quietExecution = await pumpDb.WorkflowExecutions.SingleAsync(e => e.Id == quietExecutionId);
+        Assert.Equal(1, quietExecution.CurrentStepNumber);
+        // And the flood tenant took only its two round-robin slots.
+        Assert.Equal(2, await pumpDb.WorkflowExecutions
+            .Where(e => e.TenantId != quietTenantId)
+            .CountAsync(e => e.CurrentStepNumber == 1));
+    }
 }

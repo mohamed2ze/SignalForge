@@ -8,6 +8,13 @@ public class ExecutionPumpOptions
     /// <summary>Maximum number of runnable executions advanced per poll cycle.</summary>
     public int BatchSize { get; set; } = 10;
 
+    /// <summary>
+    /// How many times <see cref="BatchSize"/> the pump scans before applying per-tenant fairness.
+    /// The batch is then filled round-robin (one candidate per tenant per round, oldest first) so
+    /// a flood from one tenant cannot starve quieter tenants' executions.
+    /// </summary>
+    public int ScanMultiplier { get; set; } = 5;
+
     /// <summary>Seconds between poll cycles when there is nothing left to advance.</summary>
     public double PollIntervalSeconds { get; set; } = 2;
 

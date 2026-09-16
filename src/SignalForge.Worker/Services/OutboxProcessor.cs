@@ -60,15 +60,24 @@ public class OutboxProcessor : IOutboxProcessor
             var now = DateTime.UtcNow;
             var leaseWatermark = now.AddSeconds(-_options.ClaimLeaseSeconds);
 
-            var candidateIds = await dbContext.OutboxMessages
+            var scanLimit = _options.BatchSize * _options.ScanMultiplier;
+            var scanned = await dbContext.OutboxMessages
                 .Where(m => !m.IsProcessed)
                 .Where(m => m.FailedAt == null || m.NextRetryAt == null || m.NextRetryAt <= now)
                 .Where(m => m.ClaimedAt == null || m.ClaimedAt < leaseWatermark)
+                .Where(m => dbContext.Tenants.Any(t => t.Id == m.TenantId && t.DeletedAt == null))
                 .OrderBy(m => m.CreatedAt)
                 .ThenBy(m => m.Id) // Deterministic tiebreak between same-instant messages
-                .Select(m => m.Id)
-                .Take(_options.BatchSize)
+                .Select(m => new { m.Id, m.TenantId })
+                .Take(scanLimit)
                 .ToListAsync(cancellationToken);
+
+            // Deactivated (soft-deleted) tenants are filtered above so their messages are neither
+            // published nor retried. Per-tenant fairness: a flood from one tenant fills only its
+            // round-robin share of the batch, never the whole batch.
+            var candidateIds = FairBatchSelector.PickFairBatch(
+                scanned.Select(s => (s.Id, s.TenantId)).ToList(),
+                _options.BatchSize);
 
             _logger.LogDebug("Polled {Count} candidate outbox messages", candidateIds.Count);
 

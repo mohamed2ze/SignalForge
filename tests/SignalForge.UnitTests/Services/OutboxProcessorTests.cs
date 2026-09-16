@@ -435,6 +435,84 @@ public class OutboxProcessorTests
         }
     }
 
+    // ---------- tenant lifecycle: deactivated tenants are not published ----------
+
+    [Fact]
+    public async Task Messages_of_a_deactivated_tenant_are_never_claimed()
+    {
+        var options = NewInMemoryOptions();
+        await SeedMessageAsync(options, "OrderCreated", """{"id":1}""");
+
+        // Soft-delete the tenant after its message entered the outbox.
+        await using (var tenantCtx = new SignalForgeDbContext(options))
+        {
+            var tenant = await tenantCtx.Tenants.SingleAsync();
+            tenant.Deactivate();
+            await tenantCtx.SaveChangesAsync();
+        }
+
+        var broker = new InMemoryMessageBroker();
+        var sender = new OutboxMessageSender(broker, NullLogger<OutboxMessageSender>.Instance);
+        var processor = CreateProcessor(BuildScopeFactory(options, sender));
+
+        var delay = await processor.ProcessBatchAsync(CancellationToken.None);
+
+        // The message is invisible to the cycle: nothing published, never even claimed.
+        Assert.Equal(TimeSpan.FromSeconds(5), delay);
+        Assert.Empty(broker.GetAll());
+        await using (var verify = new SignalForgeDbContext(options))
+        {
+            var message = await verify.OutboxMessages.SingleAsync();
+            Assert.False(message.IsProcessed);
+            Assert.Null(message.ClaimedAt);
+        }
+    }
+
+    // ---------- per-tenant fairness: a flood cannot starve quieter tenants ----------
+
+    [Fact]
+    public async Task One_tenants_flood_does_not_starve_a_quieter_tenants_message()
+    {
+        var options = NewInMemoryOptions();
+        var tenantA = Guid.NewGuid();
+        var tenantB = Guid.NewGuid();
+
+        // Tenant A floods the scan head; tenant B has a single message that is strictly NEWER.
+        // BatchSize=3 with the default 5x scan: a global oldest-first batch would be all A's,
+        // stranding B; the round-robin batch holds A0, B0, A1.
+        await using (var seed = new SignalForgeDbContext(options))
+        {
+            seed.Tenants.AddRange(
+                Tenant.CreateWithId(tenantA, "flood-a"),
+                Tenant.CreateWithId(tenantB, "quiet-b"));
+            for (var i = 0; i < 6; i++)
+                seed.OutboxMessages.Add(OutboxMessage.Create(tenantA, "OrderCreated", $"{{\"id\":{i}}}"));
+            seed.OutboxMessages.Add(OutboxMessage.Create(tenantB, "OrderCreated", """{"id":"b"}"""));
+            await seed.SaveChangesAsync();
+        }
+        await using (var setter = new SignalForgeDbContext(options))
+        {
+            var b = await setter.OutboxMessages.SingleAsync(m => m.TenantId == tenantB);
+            setter.Entry(b).Property(m => m.CreatedAt).CurrentValue = DateTime.UtcNow.AddHours(1);
+            await setter.SaveChangesAsync();
+        }
+
+        var broker = new InMemoryMessageBroker();
+        var sender = new OutboxMessageSender(broker, NullLogger<OutboxMessageSender>.Instance);
+        var processor = CreateProcessor(
+            BuildScopeFactory(options, sender),
+            new OutboxOptions { BatchSize = 3 });
+
+        await processor.ProcessBatchAsync(CancellationToken.None);
+
+        // The quieter tenant's message was delivered in the FIRST batch, not starved, and the
+        // round-robin respected the batch bound: exactly three delivered, two of the flood's and
+        // the single quieter tenant's.
+        var delivered = broker.GetAll();
+        Assert.Equal(3, delivered.Count);
+        Assert.Contains(delivered, m => m.Type == "OrderCreated" && m.Payload.Contains("\"id\":\"b\""));
+    }
+
     private static async Task SetClaimedAtAsync(DbContextOptions<SignalForgeDbContext> options, DateTime claimedAtUtc)
     {
         await using var ctx = new SignalForgeDbContext(options);
@@ -449,6 +527,12 @@ public class OutboxProcessorTests
         string payload)
     {
         await using var ctx = new SignalForgeDbContext(options);
+        // The processor's candidate query joins the tenant table to exclude deactivated tenants,
+        // so a message without a backing tenant row is invisible to it — mirror production where
+        // an outbox message always belongs to an existing tenant.
+        var tenant = await ctx.Tenants.FirstOrDefaultAsync(t => t.Id == TenantId);
+        if (tenant is null)
+            ctx.Tenants.Add(Tenant.CreateWithId(TenantId, "outbox-test"));
         ctx.OutboxMessages.Add(OutboxMessage.Create(TenantId, type, payload));
         await ctx.SaveChangesAsync();
     }
