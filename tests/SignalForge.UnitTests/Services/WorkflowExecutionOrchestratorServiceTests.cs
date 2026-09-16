@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using SignalForge.Application.Notifications;
 using SignalForge.Application.Services;
 using SignalForge.Domain.Enums;
@@ -45,7 +46,9 @@ public class WorkflowExecutionOrchestratorServiceTests
     private static WorkflowExecutionOrchestratorService CreateOrchestrator(SignalForgeDbContext db)
     {
         var retryPolicy = new StepExecutionRetryPolicy(
-            db, NullLogger<StepExecutionRetryPolicy>.Instance);
+            db,
+            Options.Create(new StepRetryPolicyOptions()),
+            NullLogger<StepExecutionRetryPolicy>.Instance);
         var advancer = new WorkflowExecutionAdvancer(
             db, BuildProcessorRegistry(), retryPolicy,
             NullLogger<WorkflowExecutionAdvancer>.Instance);

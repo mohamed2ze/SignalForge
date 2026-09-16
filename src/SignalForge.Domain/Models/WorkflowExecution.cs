@@ -125,14 +125,6 @@ public class WorkflowExecution
     }
 
     /// <summary>
-    /// Increments the retry count.
-    /// </summary>
-    public void IncrementRetry()
-    {
-        RetryCount++;
-    }
-
-    /// <summary>
     /// Advances to the next step.
     /// </summary>
     public void AdvanceStep()

@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using SignalForge.Application.Services;
 using SignalForge.Domain.Enums;
 using SignalForge.Domain.Models;
@@ -21,7 +22,7 @@ public class StepExecutionRetryPolicyTests
             .Options);
 
     private static StepExecutionRetryPolicy CreatePolicy(SignalForgeDbContext db)
-        => new(db, NullLogger<StepExecutionRetryPolicy>.Instance);
+        => new(db, Options.Create(new StepRetryPolicyOptions()), NullLogger<StepExecutionRetryPolicy>.Instance);
 
     private static async Task<WorkflowExecution> SeedRunningExecutionAsync(SignalForgeDbContext db)
     {
@@ -67,11 +68,11 @@ public class StepExecutionRetryPolicyTests
         Assert.Equal(WorkflowExecutionStatus.Running, execution.Status);
         Assert.Empty(db.DeadLetterMessages);
 
-        // Backoff = 2^attempt seconds (attempt 1 → 2s from now).
+        // Backoff = 2^attempt seconds jittered to ±50% (attempt 1 → base 2s, delay in [1s, 2s)).
         Assert.NotNull(step.NextRetryAt);
-        var expected = DateTime.UtcNow.AddSeconds(Math.Pow(2, step.AttemptNumber));
-        Assert.True(step.NextRetryAt > DateTime.UtcNow.AddSeconds(-1));
-        Assert.True(Math.Abs((step.NextRetryAt!.Value - expected).TotalSeconds) < 1);
+        var baseSeconds = Math.Min(Math.Pow(2, step.AttemptNumber), new StepRetryPolicyOptions().MaxBackoffSeconds);
+        var delaySeconds = (step.NextRetryAt!.Value - DateTime.UtcNow).TotalSeconds;
+        Assert.InRange(delaySeconds, baseSeconds * 0.5 - 1, baseSeconds + 1);
     }
 
     [Fact]
@@ -110,7 +111,40 @@ public class StepExecutionRetryPolicyTests
 
         Assert.Equal(WorkflowStepExecutionStatus.Retrying, step.Status);
         Assert.NotNull(step.NextRetryAt);
-        var expected = DateTime.UtcNow.AddSeconds(Math.Pow(2, step.AttemptNumber));
-        Assert.True(Math.Abs((step.NextRetryAt!.Value - expected).TotalSeconds) < 1);
+        var baseSeconds = Math.Min(Math.Pow(2, step.AttemptNumber), new StepRetryPolicyOptions().MaxBackoffSeconds);
+        var delaySeconds = (step.NextRetryAt!.Value - DateTime.UtcNow).TotalSeconds;
+        Assert.InRange(delaySeconds, baseSeconds * 0.5 - 1, baseSeconds + 1);
+    }
+
+    [Fact]
+    public async Task ScheduleRetry_CapsBackoffAtTheConfiguredMaximum()
+    {
+        var db = CreateDb();
+        var execution = await SeedRunningExecutionAsync(db);
+        var step = NewFailedStep(execution, maxAttempts: 20);
+        db.WorkflowStepExecutions.Add(step);
+        await db.SaveChangesAsync();
+
+        var policy = new StepExecutionRetryPolicy(
+            db,
+            Options.Create(new StepRetryPolicyOptions { MaxBackoffSeconds = 30 }),
+            NullLogger<StepExecutionRetryPolicy>.Instance);
+
+        for (var attempt = 0; attempt < 8; attempt++)
+        {
+            step.Retry(DateTime.UtcNow);
+            await db.SaveChangesAsync();
+            step.PrepareForRetry();
+            await db.SaveChangesAsync();
+            step.Start();
+            await db.SaveChangesAsync();
+            step.Fail("simulated step failure");
+            await db.SaveChangesAsync();
+        }
+
+        await policy.ScheduleRetryAsync(step);
+
+        var delaySeconds = (step.NextRetryAt!.Value - DateTime.UtcNow).TotalSeconds;
+        Assert.InRange(delaySeconds, 15 - 1, 30 + 1); // capped at 30s, jittered to ±50%
     }
 }

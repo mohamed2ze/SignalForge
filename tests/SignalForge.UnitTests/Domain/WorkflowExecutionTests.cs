@@ -95,17 +95,6 @@ public class WorkflowExecutionTests
     }
 
     [Fact]
-    public void IncrementRetry_counts_retries()
-    {
-        var execution = CreateExecution();
-
-        execution.IncrementRetry();
-        execution.IncrementRetry();
-
-        Assert.Equal(2, execution.RetryCount);
-    }
-
-    [Fact]
     public void AdvanceStep_increments_only_when_running()
     {
         var execution = CreateExecution();
@@ -145,7 +134,6 @@ public class WorkflowExecutionTests
         execution.Start();
         execution.AdvanceStep();
         execution.Fail("boom");
-        execution.IncrementRetry();
 
         execution.ResetForRetry();
 

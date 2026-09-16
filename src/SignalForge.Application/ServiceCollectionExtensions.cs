@@ -25,6 +25,7 @@ namespace SignalForge.Application
             services.AddScoped<IWorkflowExecutionOrchestratorService, WorkflowExecutionOrchestratorService>();
             services.AddScoped<IWorkflowExecutionAdvancer, WorkflowExecutionAdvancer>();
             services.AddScoped<IStepExecutionRetryPolicy, StepExecutionRetryPolicy>();
+            services.AddOptions<StepRetryPolicyOptions>();
             services.AddScoped<IWorkflowService, WorkflowService>();
             services.AddScoped<IDeadLetterProcessingService, DeadLetterProcessingService>();
             services.AddScoped<IExecutionObservabilityService, ExecutionObservabilityService>();

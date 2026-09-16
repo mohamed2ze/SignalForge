@@ -71,6 +71,25 @@ public class EventTests
     }
 
     [Fact]
+    public void Create_rejects_payload_above_the_maximum_length()
+    {
+        var oversized = new string('a', Event.PayloadMaxLength + 1);
+
+        Assert.Throws<ArgumentException>(() =>
+            Event.Create(Guid.NewGuid(), "ext-1", "order.created", DateTime.UtcNow, oversized));
+    }
+
+    [Fact]
+    public void Create_accepts_payload_at_the_maximum_length()
+    {
+        var atLimit = new string('a', Event.PayloadMaxLength);
+
+        var eventEntity = Event.Create(Guid.NewGuid(), "ext-1", "order.created", DateTime.UtcNow, atLimit);
+
+        Assert.Equal(Event.PayloadMaxLength, eventEntity.Payload.Length);
+    }
+
+    [Fact]
     public void MarkAsProcessed_sets_state()
     {
         var eventEntity = Event.Create(Guid.NewGuid(), "ext-1", "order.created", DateTime.UtcNow, "{}");

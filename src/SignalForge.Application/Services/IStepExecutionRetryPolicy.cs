@@ -7,8 +7,9 @@ namespace SignalForge.Application.Services;
 /// <summary>
 /// Owns the step-failure retry policy shared by every execution-advancement path: the worker's
 /// pump (via the advancer) and the HTTP manual-retry endpoint. A failed step either schedules an
-/// exponential-backoff retry (2^attempt seconds) in place, or — once attempts are exhausted —
-/// creates exactly one dead-letter message and fails the parent execution.
+/// exponential-backoff retry (2^attempt seconds, jittered ±50% and capped at
+/// <see cref="StepRetryPolicyOptions.MaxBackoffSeconds"/>) in place, or — once attempts are
+/// exhausted — creates exactly one dead-letter message and fails the parent execution.
 /// </summary>
 public interface IStepExecutionRetryPolicy
 {

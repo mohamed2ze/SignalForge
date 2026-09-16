@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using SignalForge.Application.Services;
 using SignalForge.Domain.Models;
 using SignalForge.Infrastructure.Data;
@@ -168,7 +169,9 @@ public class CrossTenantIsolationTests : ApiTestBase
 
             using var readCtx = new SignalForgeDbContext(options);
             var readRetryPolicy = new StepExecutionRetryPolicy(
-                readCtx, NullLogger<StepExecutionRetryPolicy>.Instance);
+                readCtx,
+                Options.Create(new StepRetryPolicyOptions()),
+                NullLogger<StepExecutionRetryPolicy>.Instance);
             var readAdvancer = new WorkflowExecutionAdvancer(
                 readCtx, new StepProcessorRegistry([]), readRetryPolicy,
                 NullLogger<WorkflowExecutionAdvancer>.Instance);

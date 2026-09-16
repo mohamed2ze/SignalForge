@@ -9,6 +9,7 @@ using SignalForge.Application;
 using SignalForge.Application.Data;
 using SignalForge.Application.RateLimiting;
 using SignalForge.Application.Security;
+using SignalForge.Application.Services;
 using SignalForge.Infrastructure.Data;
 using SignalForge.Infrastructure.RateLimiting;
 
@@ -66,6 +67,10 @@ builder.Services.AddScoped<IUniqueViolationDetector, SqlUniqueKeyViolationDetect
 // Outbound webhook SSRF/timeout/size settings (defaults are strict; override per environment).
 builder.Services.AddOptions<OutboundWebhookOptions>()
     .Bind(builder.Configuration.GetSection("OutboundWebhook"));
+
+// Shared step retry/backoff policy options (used by the manual step-retry endpoint).
+builder.Services.Configure<StepRetryPolicyOptions>(
+    builder.Configuration.GetSection("StepRetry"));
 
 // Add authentication services
 builder.Services.AddAuthentication(ApiKeyAuthenticationDefaults.AuthenticationScheme)

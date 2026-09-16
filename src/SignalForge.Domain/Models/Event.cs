@@ -6,6 +6,13 @@ namespace SignalForge.Domain.Models;
 /// </summary>
 public class Event
 {
+    /// <summary>
+    /// Upper bound for the event payload length in characters. Enforced at the write boundary
+    /// (domain <see cref="Create"/>), by the ingest request validation, and declared on the
+    /// persisted column via the EF mapping.
+    /// </summary>
+    public const int PayloadMaxLength = 1_048_576;
+
     public Guid Id { get; private set; }
     public Guid TenantId { get; private set; }
     public string ExternalEventId { get; private set; } = default!; // Idempotency key from external system
@@ -64,6 +71,9 @@ public class Event
 
         if (string.IsNullOrWhiteSpace(payload))
             throw new ArgumentException("Event payload cannot be empty", nameof(payload));
+
+        if (payload.Length > PayloadMaxLength)
+            throw new ArgumentException($"Event payload exceeds the maximum length of {PayloadMaxLength} characters", nameof(payload));
 
         return new Event(
             Guid.NewGuid(),

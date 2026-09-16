@@ -35,9 +35,14 @@ Data flow at a high level:
 Client ──HTTP event──▶ API (EventsController, X-API-Key auth)
                          │ ingest (idempotent by TenantId + ExternalEventId)
                          ▼
-                     DB ── outbox message written transactionally ──▶ Worker polls outbox
-                                                                         │ publish
+                     DB ── Events table (the stored event triggers executions)
+                                         ▲
+                                         │ advance claimed executions
 Worker ──▶ workflow execution (sequential steps, retries, dead-letter on exhaustion)
+               │ a step that emits an event writes an outbox message atomically
+               │ with its step-success transition
+               ▼
+           DB ── outbox ──▶ Worker polls outbox ──▶ publish
 ```
 
 Execution orchestration is split across three focused services in `SignalForge.Application`:

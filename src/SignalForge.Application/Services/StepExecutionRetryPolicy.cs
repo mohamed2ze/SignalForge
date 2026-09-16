@@ -3,6 +3,7 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using SignalForge.Application.Data;
 using SignalForge.Application.Security;
 using SignalForge.Domain.Models;
@@ -12,8 +13,11 @@ namespace SignalForge.Application.Services;
 /// <inheritdoc cref="IStepExecutionRetryPolicy"/>
 public class StepExecutionRetryPolicy(
     ISignalForgeDbContext dbContext,
+    IOptions<StepRetryPolicyOptions> options,
     ILogger<StepExecutionRetryPolicy> logger) : IStepExecutionRetryPolicy
 {
+    private readonly StepRetryPolicyOptions _options = options.Value;
+
     /// <inheritdoc />
     public async Task<StepFailureResolution> ResolveFailureAsync(
         WorkflowExecution execution,
@@ -50,7 +54,13 @@ public class StepExecutionRetryPolicy(
         WorkflowStepExecution stepExecution,
         CancellationToken cancellationToken = default)
     {
-        var retryDelay = TimeSpan.FromSeconds(Math.Pow(2, stepExecution.AttemptNumber));
+        // Exponential backoff with a cap and jitter: 2^attempt seconds, capped at
+        // MaxBackoffSeconds, then randomized to ±50% (factor in [0.5, 1.0)) so a burst of failed
+        // steps does not all retry on the same clock tick. The cap keeps a repeatedly failing
+        // step from pushing its resumption arbitrarily far into the future.
+        var baseSeconds = Math.Min(Math.Pow(2, stepExecution.AttemptNumber), _options.MaxBackoffSeconds);
+        var jitteredSeconds = baseSeconds * (0.5 + Random.Shared.NextDouble() * 0.5);
+        var retryDelay = TimeSpan.FromSeconds(jitteredSeconds);
         stepExecution.Retry(DateTime.UtcNow.Add(retryDelay));
         await dbContext.SaveChangesAsync(cancellationToken);
     }

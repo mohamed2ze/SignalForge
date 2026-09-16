@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 using SignalForge.Api.Dtos;
 using SignalForge.Api.Observability;
 using SignalForge.Application.Services;
+using SignalForge.Domain.Models;
 using static SignalForge.Api.Controllers.ApiControllerExtensions;
 
 namespace SignalForge.Api.Controllers;
@@ -73,6 +74,16 @@ public class EventsController : ControllerBase
                     Title = "Event payload is required",
                     Status = StatusCodes.Status400BadRequest,
                     Detail = "The event payload must be provided"
+                });
+            }
+
+            if (request.Payload.Length > Event.PayloadMaxLength)
+            {
+                return BadRequest(new ProblemDetails
+                {
+                    Title = "Event payload is too large",
+                    Status = StatusCodes.Status400BadRequest,
+                    Detail = $"The event payload must not exceed {Event.PayloadMaxLength} characters"
                 });
             }
 

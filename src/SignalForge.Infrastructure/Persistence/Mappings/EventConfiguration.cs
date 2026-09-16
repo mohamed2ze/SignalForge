@@ -29,7 +29,8 @@ public class EventConfiguration : IEntityTypeConfiguration<Event>
             .IsRequired();
 
         builder.Property(e => e.Payload)
-            .IsRequired();
+            .IsRequired()
+            .HasMaxLength(Event.PayloadMaxLength);
 
         builder.Property(e => e.ReceivedAt)
             .IsRequired();

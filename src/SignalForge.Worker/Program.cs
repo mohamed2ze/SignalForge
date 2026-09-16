@@ -27,6 +27,10 @@ if (builder.Configuration.GetValue<bool>("Logging:Console:Json", false))
 builder.Services.Configure<OutboxOptions>(
     builder.Configuration.GetSection("Outbox"));
 
+// Shared step retry/backoff policy options (used by the execution pump's advancement path)
+builder.Services.Configure<StepRetryPolicyOptions>(
+    builder.Configuration.GetSection("StepRetry"));
+
 // Host-level options (graceful shutdown / drain window shared across loops)
 builder.Services.Configure<HostingOptions>(
     builder.Configuration.GetSection("Worker"));
